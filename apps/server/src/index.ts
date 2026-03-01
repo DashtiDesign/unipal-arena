@@ -91,8 +91,9 @@ function clearGameTimer(roomCode: string) {
 
 // Games that auto-resolve when a winner is found before time expires (v===1 check)
 // All games with "wait for both" or custom logic use isResolved?() on GameDefinition instead
-const EARLY_RESOLVE_GAMES = new Set([
-  "reaction_green",
+// All games now use isResolved?() or run to timer expiry — nothing needs the early-resolve speculative check
+const EARLY_RESOLVE_GAMES = new Set<string>([
+  // reaction_green — moved to isResolved?()
   // quick_maths, emoji_odd_one_out, memory_grid — wait for both players, use isResolved?()
   // higher_lower, rock_paper_scissors, tic_tac_toe — use isResolved?()
   // whack_a_logo, tapping_speed, stop_at_10s — run to time expiry
@@ -340,9 +341,29 @@ io.on("connection", (socket) => {
 
   socket.on(EVENTS.GAME_SYNC, (payload: GameSyncPayload) => {
     const roomCode = (payload?.roomCode ?? "").trim();
+    const room     = rooms.get(roomCode);
     const arena    = arenas.get(roomCode);
     if (!arena || arena.phase !== "DUELING" || !arena.duel) return;
-    if (arena.duel.matchId !== payload?.matchId) return;
+
+    // Stale matchId — client is behind; push current arena so it updates matchId/gameDefId
+    if (arena.duel.matchId !== payload?.matchId) {
+      socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
+      // Also push a game state snapshot so client doesn't need to re-sync after updating
+      const def   = REGISTRY.get(arena.duel.gameDefId);
+      const state = gameStates.get(roomCode);
+      if (def && state) {
+        const remainingMs = arena.endsAt ? Math.max(0, arena.endsAt - Date.now()) : 0;
+        socket.emit(EVENTS.GAME_STATE, {
+          roomCode,
+          matchId: arena.duel.matchId,
+          gameId: arena.gameId,
+          gameDefId: arena.duel.gameDefId,
+          publicState: def.publicState(state),
+          remainingMs,
+        });
+      }
+      return;
+    }
 
     const def   = REGISTRY.get(arena.duel.gameDefId);
     const state = gameStates.get(roomCode);

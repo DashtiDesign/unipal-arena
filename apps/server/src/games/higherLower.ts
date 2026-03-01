@@ -54,9 +54,14 @@ const higherLower: GameDefinition<State, Public> = {
   },
 
   publicState(s): Public {
+    // If all guesses are from the previous round (stale), treat current round as unsubmitted
+    const stale = s.playerIds.every((id) => id in s.roundGuesses);
+    const submitted = stale
+      ? Object.fromEntries(s.playerIds.map((id) => [id, false]))
+      : Object.fromEntries(s.playerIds.map((id) => [id, id in s.roundGuesses]));
     return {
       round: s.round,
-      submitted: Object.fromEntries(s.playerIds.map((id) => [id, id in s.roundGuesses])),
+      submitted,
       winner: s.winner,
       isDraw: s.isDraw,
       finished: s.finished,
@@ -65,7 +70,13 @@ const higherLower: GameDefinition<State, Public> = {
 
   input(s, playerId, payload) {
     if (s.finished) return s;
-    if (s.roundGuesses[playerId]) return s; // already submitted this round
+
+    // If both players' guesses from the previous round are still present (round advanced
+    // but roundGuesses wasn't cleared yet), clear them now for the new round.
+    const stale = s.playerIds.every((id) => id in s.roundGuesses);
+    const currentGuesses = stale ? {} : s.roundGuesses;
+
+    if (currentGuesses[playerId]) return s; // already submitted this round
 
     const guess = Number((payload as { guess: unknown }).guess);
     if (!Number.isInteger(guess) || guess < 1 || guess > 100) return s;
@@ -73,7 +84,7 @@ const higherLower: GameDefinition<State, Public> = {
     const hint: Hint =
       guess === s.secret ? "correct" : guess < s.secret ? "higher" : "lower";
 
-    const newRoundGuesses = { ...s.roundGuesses, [playerId]: { guess, hint } };
+    const newRoundGuesses = { ...currentGuesses, [playerId]: { guess, hint } };
 
     // Check if both players have submitted this round
     const bothSubmitted = s.playerIds.every((id) => id in newRoundGuesses);
@@ -103,11 +114,13 @@ const higherLower: GameDefinition<State, Public> = {
       return { ...s, roundGuesses: newRoundGuesses, history: newHistory, winner: b, finished: true };
     }
 
-    // Neither correct — advance to next round
+    // Neither correct — advance to next round.
+    // Keep roundGuesses from this round so privateUpdate can emit hints to both players.
+    // The next input() call detects the round mismatch and clears stale guesses.
     return {
       ...s,
       history: newHistory,
-      roundGuesses: {},
+      roundGuesses: newRoundGuesses,
       round: s.round + 1,
     };
   },
@@ -115,7 +128,12 @@ const higherLower: GameDefinition<State, Public> = {
   privateUpdate(s, playerId) {
     const rg = s.roundGuesses[playerId];
     if (!rg) return null;
-    return { round: s.round, hint: rg.hint, guess: rg.guess };
+    // When round has advanced (both submitted, neither correct), roundGuesses still hold
+    // last round's data but s.round is already incremented — report the previous round number.
+    const guessRound = s.playerIds.every((id) => id in s.roundGuesses)
+      ? s.round - 1  // both submitted → round already advanced
+      : s.round;
+    return { round: guessRound, hint: rg.hint, guess: rg.guess };
   },
 
   isResolved(s) {

@@ -5,9 +5,9 @@ const AREA_W = 320;
 const AREA_H = 340;
 const LOGO_SIZE = 80;
 
-interface Target { id: string; x: number; y: number; isBomb: boolean }
+interface Target { id: string; x: number; y: number }
 interface State {
-  targets: Record<string, Target>;
+  slots: Record<string, { logo: Target; bomb: Target | null }>;
   hits: Record<string, number>;
 }
 
@@ -25,15 +25,9 @@ function UnipalLogo({ size }: { size: number }) {
 
 export default function WhackALogo({ publicState, playerId, opponentId, onInput, remainingMs }: GameComponentProps) {
   const s = publicState as State;
-  const myHits   = s.hits[playerId]   ?? 0;
-  const oppHits  = s.hits[opponentId] ?? 0;
-  const myTarget = s.targets[playerId];
-
-  function handleTap(e: React.PointerEvent) {
-    e.preventDefault();
-    if (!myTarget) return;
-    onInput({ targetId: myTarget.id });
-  }
+  const myHits  = s.hits[playerId]   ?? 0;
+  const oppHits = s.hits[opponentId] ?? 0;
+  const mySlot  = s.slots[playerId];
 
   return (
     <div className="flex flex-col items-center gap-3 py-4 w-full select-none">
@@ -55,37 +49,41 @@ export default function WhackALogo({ publicState, playerId, opponentId, onInput,
         className="relative bg-base-200 rounded-2xl overflow-hidden border border-base-300"
         style={{ width: AREA_W, height: AREA_H, touchAction: "none" }}
       >
-        {myTarget && (
+        {/* Logo — always present */}
+        {mySlot?.logo && (
           <button
-            key={myTarget.id}
-            className={[
-              "absolute p-0 border-none bg-transparent transition-transform duration-75",
-              myTarget.isBomb ? "active:scale-110" : "active:scale-90",
-            ].join(" ")}
-            style={{
-              left: myTarget.x,
-              top: myTarget.y,
-              width: LOGO_SIZE,
-              height: LOGO_SIZE,
-              touchAction: "none",
-            }}
-            onPointerDown={handleTap}
+            key={mySlot.logo.id}
+            className="absolute p-0 border-none bg-transparent active:scale-90 transition-transform duration-75"
+            style={{ left: mySlot.logo.x, top: mySlot.logo.y, width: LOGO_SIZE, height: LOGO_SIZE, touchAction: "none" }}
+            onPointerDown={(e) => { e.preventDefault(); onInput({ targetId: mySlot.logo.id }); }}
           >
-            {myTarget.isBomb ? (
-              <div
-                className="w-full h-full flex items-center justify-center rounded-full bg-error/20 border-2 border-error animate-pulse"
-                style={{ fontSize: LOGO_SIZE * 0.6 }}
-              >
-                💣
-              </div>
-            ) : (
-              <UnipalLogo size={LOGO_SIZE} />
-            )}
+            <UnipalLogo size={LOGO_SIZE} />
+          </button>
+        )}
+
+        {/* Bomb — optional, independent tap target */}
+        {mySlot?.bomb && (
+          <button
+            key={mySlot.bomb.id}
+            className="absolute p-0 border-none bg-transparent active:scale-110 transition-transform duration-75"
+            style={{ left: mySlot.bomb.x, top: mySlot.bomb.y, width: LOGO_SIZE, height: LOGO_SIZE, touchAction: "none" }}
+            onPointerDown={(e) => { e.preventDefault(); onInput({ targetId: mySlot.bomb.id }); }}
+          >
+            <div
+              className="w-full h-full flex items-center justify-center rounded-full bg-error/20 border-2 border-error animate-pulse"
+              style={{ fontSize: LOGO_SIZE * 0.6 }}
+            >
+              💣
+            </div>
           </button>
         )}
       </div>
 
-      <p className="text-xs text-base-content/40">Tap the logo — avoid the 💣 bomb (–2 pts)!</p>
+      <p className="text-xs text-base-content/40">
+        {mySlot?.bomb
+          ? "Tap 💣 (−2 pts) or tap the logo to clear both!"
+          : "Tap the logo (+1 pt) — avoid the 💣 bomb!"}
+      </p>
     </div>
   );
 }

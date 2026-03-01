@@ -4,11 +4,12 @@ type Op = "+" | "-" | "×";
 
 interface State {
   playerIds: string[];
+  startedAt: number;                  // epoch ms when game was initialised
   question: string;
   answer: number;
   options: number[];          // 6 shuffled choices (includes correct answer)
   choices: Record<string, number>;    // playerId -> chosen option value
-  finishedAt: Record<string, number>; // playerId -> epoch ms when they answered
+  finishedAt: Record<string, number>; // playerId -> elapsed ms from startedAt
 }
 
 interface Public {
@@ -76,7 +77,7 @@ const quickMaths: GameDefinition<State, Public> = {
   init(playerIds) {
     const { question, answer } = makeQuestion();
     const options = makePlausibleOptions(answer);
-    return { playerIds, question, answer, options, choices: {}, finishedAt: {} };
+    return { playerIds, startedAt: Date.now(), question, answer, options, choices: {}, finishedAt: {} };
   },
   publicState(s) {
     const allAnswered = s.playerIds.every((id) => id in s.choices);
@@ -98,7 +99,7 @@ const quickMaths: GameDefinition<State, Public> = {
     return {
       ...s,
       choices: { ...s.choices, [playerId]: chosen },
-      finishedAt: { ...s.finishedAt, [playerId]: Date.now() },
+      finishedAt: { ...s.finishedAt, [playerId]: Date.now() - s.startedAt },
     };
   },
   isResolved(s) {

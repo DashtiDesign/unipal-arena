@@ -53,6 +53,12 @@ const reactionGreen: GameDefinition<State, Public> = {
     }
     return { ...s, reactions: { ...s.reactions, [playerId]: now } };
   },
+  isResolved(s) {
+    // Any early tap is immediately final
+    if (Object.keys(s.earlyTap).length > 0) return true;
+    // Both reacted after green → done
+    return s.playerIds.every((id) => id in s.reactions);
+  },
   resolve(s) {
     const [a, b] = s.playerIds;
     const outcomeByPlayerId: Record<string, number> = {};

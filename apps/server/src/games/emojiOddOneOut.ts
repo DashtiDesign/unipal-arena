@@ -11,10 +11,11 @@ const PAIRS: [string, string][] = [
 
 interface State {
   playerIds: string[];
+  startedAt: number;                  // epoch ms when game was initialised
   cells: string[];   // 16 items: 15 same + 1 odd
   oddIdx: number;    // which index holds the odd emoji
   answers: Record<string, number>;    // playerId -> tapped idx
-  finishedAt: Record<string, number>; // playerId -> epoch ms when they answered
+  finishedAt: Record<string, number>; // playerId -> elapsed ms from startedAt
 }
 
 interface Public {
@@ -48,7 +49,7 @@ const emojiOddOneOut: GameDefinition<State, Public> = {
     raw.push(odd);
     const cells = shuffle(raw);
     const oddIdx = cells.indexOf(odd);
-    return { playerIds, cells, oddIdx, answers: {}, finishedAt: {} };
+    return { playerIds, startedAt: Date.now(), cells, oddIdx, answers: {}, finishedAt: {} };
   },
   publicState(s) {
     const allAnswered = s.playerIds.every((id) => id in s.answers);
@@ -69,7 +70,7 @@ const emojiOddOneOut: GameDefinition<State, Public> = {
     return {
       ...s,
       answers: { ...s.answers, [playerId]: idx },
-      finishedAt: { ...s.finishedAt, [playerId]: Date.now() },
+      finishedAt: { ...s.finishedAt, [playerId]: Date.now() - s.startedAt },
     };
   },
   isResolved(s) {

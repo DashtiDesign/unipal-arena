@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { socket } from "../socket";
 import { EVENTS } from "@arena/shared";
 import type { GameStatePayload, GamePrivatePayload } from "@arena/shared";
@@ -23,13 +23,28 @@ export default function GameFrame({
   const [publicState, setPublicState] = useState<unknown>(null);
   const [remainingMs, setRemainingMs] = useState(durationMs);
   const [privateEvents, setPrivateEvents] = useState<unknown[]>([]);
+  const publicStateRef = useRef<unknown>(null);
 
-  // Reset all local game state and request a snapshot whenever matchId changes
+  // Reset all local game state and request a snapshot whenever matchId changes.
+  // If no state arrives within 800ms, retry the sync up to 2 more times.
   useEffect(() => {
     setPublicState(null);
+    publicStateRef.current = null;
     setRemainingMs(durationMs);
     setPrivateEvents([]);
     socket.emit(EVENTS.GAME_SYNC, { roomCode, matchId });
+
+    const retryDelays = [800, 1600];
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (const delay of retryDelays) {
+      const t = setTimeout(() => {
+        if (publicStateRef.current === null) {
+          socket.emit(EVENTS.GAME_SYNC, { roomCode, matchId });
+        }
+      }, delay);
+      timers.push(t);
+    }
+    return () => { timers.forEach(clearTimeout); };
   }, [matchId, durationMs, roomCode]);
 
   const onRemainingMsCb = useCallback((ms: number) => {
@@ -39,6 +54,7 @@ export default function GameFrame({
   useEffect(() => {
     function onState(p: GameStatePayload) {
       if (p.matchId !== matchId) return;
+      publicStateRef.current = p.publicState;
       setPublicState(p.publicState);
       setRemainingMs(p.remainingMs);
       onRemainingMsCb(p.remainingMs);
@@ -88,8 +104,9 @@ export default function GameFrame({
           privateState={privateEvents}
         />
       ) : (
-        <div className="flex justify-center py-12">
+        <div className="flex flex-col items-center gap-3 py-12 text-base-content/50">
           <span className="loading loading-spinner loading-lg" />
+          <span className="text-sm">Syncing…</span>
         </div>
       )}
     </div>
