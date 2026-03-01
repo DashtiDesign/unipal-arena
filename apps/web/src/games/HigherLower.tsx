@@ -1,0 +1,133 @@
+import { useState } from "react";
+import { GameComponentProps } from "./types";
+
+type Hint = "higher" | "lower" | "correct";
+
+interface HintEvent {
+  round: number;
+  hint: Hint;
+  guess: number;
+}
+
+interface PublicState {
+  round: number;
+  submitted: Record<string, boolean>;
+  winner: string | null;
+  isDraw: boolean;
+  finished: boolean;
+}
+
+const HINT_ICON: Record<Hint, string> = { higher: "⬆️", lower: "⬇️", correct: "✅" };
+const HINT_LABEL: Record<Hint, string> = { higher: "Go higher", lower: "Go lower", correct: "Correct!" };
+const HINT_CLASS: Record<Hint, string> = {
+  higher: "text-warning",
+  lower: "text-info",
+  correct: "text-success font-bold",
+};
+
+export default function HigherLower({
+  publicState, playerId, opponentId, onInput, remainingMs, privateState,
+}: GameComponentProps) {
+  const s = publicState as PublicState;
+  const hints = (privateState ?? []) as HintEvent[];
+  const [input, setInput] = useState("");
+
+  const iSubmitted = s.submitted[playerId] ?? false;
+  const oppSubmitted = s.submitted[opponentId] ?? false;
+
+  const lastHint = hints.length > 0 ? hints[hints.length - 1] : null;
+
+  // Finished state
+  if (s.finished) {
+    const iWon = s.winner === playerId;
+    return (
+      <div className="flex flex-col items-center gap-4 py-10">
+        <p className="text-5xl">
+          {s.isDraw ? "🤝" : iWon ? "🎉" : "😢"}
+        </p>
+        <p className="text-2xl font-bold">
+          {s.isDraw
+            ? "It's a draw!"
+            : iWon
+            ? "You guessed it!"
+            : "Opponent got it first!"}
+        </p>
+      </div>
+    );
+  }
+
+  function submit() {
+    const n = Number(input);
+    if (!input || isNaN(n) || n < 1 || n > 100) return;
+    onInput({ guess: n });
+    setInput("");
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-4 py-4 w-full">
+      {/* Header */}
+      <div className="flex items-center justify-between w-full px-2">
+        <p className="text-base font-semibold">Round {s.round} — Guess 1–100</p>
+        <p className="badge badge-neutral tabular-nums">{Math.ceil(remainingMs / 1000)}s</p>
+      </div>
+
+      {/* Own private hint history */}
+      {hints.length > 0 && (
+        <div className="w-full flex flex-col gap-1 max-h-40 overflow-y-auto">
+          {hints.map((h, i) => (
+            <div key={i} className={`flex items-center gap-2 text-sm ${HINT_CLASS[h.hint]}`}>
+              <span className="text-base-content/40 tabular-nums w-16 shrink-0">R{h.round}</span>
+              <span className="tabular-nums font-mono w-8 shrink-0">{h.guess}</span>
+              <span>{HINT_ICON[h.hint]}</span>
+              <span>{HINT_LABEL[h.hint]}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Input / waiting */}
+      {!iSubmitted ? (
+        <div className="join w-full max-w-xs">
+          <input
+            type="tel"
+            inputMode="numeric"
+            className="input input-bordered join-item flex-1 text-center text-2xl font-mono"
+            value={input}
+            autoFocus
+            maxLength={3}
+            placeholder="?"
+            onChange={(e) => setInput(e.target.value.replace(/\D/g, "").slice(0, 3))}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+          />
+          <button
+            className="btn btn-primary join-item text-xl"
+            disabled={!input}
+            onClick={submit}
+          >✓</button>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-2 py-2">
+          {lastHint && (
+            <p className={`text-lg font-semibold ${HINT_CLASS[lastHint.hint]}`}>
+              {HINT_ICON[lastHint.hint]} {HINT_LABEL[lastHint.hint]}
+            </p>
+          )}
+          {!oppSubmitted ? (
+            <>
+              <span className="loading loading-dots loading-md" />
+              <p className="text-xs text-base-content/50">Waiting for opponent…</p>
+            </>
+          ) : (
+            <p className="badge badge-info text-xs">Both submitted — next round…</p>
+          )}
+        </div>
+      )}
+
+      {/* Footer */}
+      <div className="flex justify-between w-full px-2 text-xs text-base-content/40">
+        <span>Your guesses: {hints.length}</span>
+        <span>Opponent: {oppSubmitted ? "✓ submitted" : "thinking…"}</span>
+      </div>
+    </div>
+  );
+}

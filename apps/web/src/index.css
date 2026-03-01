@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Safe-area insets for iOS notch / home bar */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+}
+
+body {
+  padding-top: var(--sat);
+  padding-bottom: var(--sab);
+}
+
+/* Prevent iOS 16- from zooming on input focus (<16px font triggers zoom) */
+input,
+select,
+textarea {
+  font-size: 16px !important;
+}
+
+/* Minimum 44px tap targets on all interactive elements */
+button,
+a,
+[role="button"] {
+  min-height: 44px;
+  min-width: 44px;
+}

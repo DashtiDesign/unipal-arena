@@ -1,0 +1,12 @@
+{
+  "name": "arena-alhalba",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"pnpm --filter server dev\" \"pnpm --filter web dev\"",
+    "build": "pnpm --filter shared build && pnpm --filter server build && pnpm --filter web build",
+    "lint": "pnpm --filter web lint && pnpm --filter server lint"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/Ali Dashti/.claude/projects/c--Users-Ali-Dashti-Documents-Code-arena-alhalba/memory/**)",
+      "Bash(pnpm build)",
+      "Bash(pnpm exec tsc --noEmit)"
+    ]
+  }
+}
