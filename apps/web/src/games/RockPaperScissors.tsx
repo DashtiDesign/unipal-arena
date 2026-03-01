@@ -79,15 +79,18 @@ export default function RockPaperScissors({
   }
 
   // ── Tie sub-round reveal: lastChoices set, not finished ────────────────────
-  // (choices is now null/empty after advancing, but lastChoices has the tie)
+  // Show the tied result AND re-enable choice buttons for the next sub-round.
   if (s.lastChoices && !s.finished) {
     const mine = s.lastChoices[playerId] as Choice | undefined;
     const theirs = s.lastChoices[opponentId] as Choice | undefined;
     return (
-      <div className="flex flex-col items-center gap-4 py-6 w-full">
-        <p className="text-xs text-base-content/40 uppercase tracking-widest">
-          Sub-round {s.subRound - 1} — Tie!
-        </p>
+      <div className="flex flex-col items-center gap-4 py-4 w-full select-none">
+        <div className="flex items-center justify-between w-full px-2">
+          <p className="text-xs text-base-content/40 uppercase tracking-widest">
+            Sub-round {s.subRound - 1} — Tie!
+          </p>
+          <p className="badge badge-neutral tabular-nums">{Math.ceil(remainingMs / 1000)}s</p>
+        </div>
         <div className="flex gap-8 items-center">
           <div className="flex flex-col items-center gap-1">
             <span className="text-5xl">{emoji(mine)}</span>
@@ -99,8 +102,26 @@ export default function RockPaperScissors({
             <span className="text-xs text-base-content/50">Opponent</span>
           </div>
         </div>
-        <p className="badge badge-warning badge-lg">🔁 Replaying — Sub-round {s.subRound}</p>
-        <p className="badge badge-neutral tabular-nums">{Math.ceil(remainingMs / 1000)}s</p>
+        <p className="badge badge-warning badge-lg">🔁 Sub-round {s.subRound} — pick again!</p>
+        {!iChose ? (
+          <div className="flex gap-3 w-full justify-center">
+            {OPTIONS.map(({ v, label, e }) => (
+              <button
+                key={v}
+                className="flex flex-col items-center gap-1 btn btn-outline h-auto py-4 px-5 active:scale-95 transition-transform"
+                onPointerDown={(ev) => { ev.preventDefault(); onInput({ choice: v }); }}
+              >
+                <span className="text-5xl">{e}</span>
+                <span className="text-xs">{label}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-1 mt-2">
+            <span className="loading loading-dots loading-md" />
+            <p className="text-xs text-base-content/50">Waiting for opponent…</p>
+          </div>
+        )}
       </div>
     );
   }

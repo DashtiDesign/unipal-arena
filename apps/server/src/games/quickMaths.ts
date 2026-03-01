@@ -7,15 +7,16 @@ interface State {
   question: string;
   answer: number;
   options: number[];          // 6 shuffled choices (includes correct answer)
-  choices: Record<string, number>; // playerId -> chosen option value
-  firstCorrect: string | null;
+  choices: Record<string, number>;    // playerId -> chosen option value
+  finishedAt: Record<string, number>; // playerId -> epoch ms when they answered
 }
 
 interface Public {
   question: string;
   options: number[];
   choices: Record<string, boolean>; // playerId -> has answered (not what they chose)
-  firstCorrect: string | null;
+  // Revealed once both answered; null while waiting
+  results: Record<string, { correct: boolean; elapsedMs: number }> | null;
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -31,13 +32,11 @@ function makePlausibleOptions(correct: number): number[] {
   const opts = new Set<number>([correct]);
   const attempts = 50;
   for (let i = 0; i < attempts && opts.size < 6; i++) {
-    // Offsets close to the correct answer — makes it non-trivial
     const delta = Math.floor(Math.random() * 10) + 1;
     const sign  = Math.random() < 0.5 ? 1 : -1;
     const candidate = correct + sign * delta;
     if (candidate > 0) opts.add(candidate);
   }
-  // fallback: fill with sequential near-values
   let fill = 1;
   while (opts.size < 6) { if (!opts.has(correct + fill)) opts.add(correct + fill); fill++; }
   return shuffle([...opts]).slice(0, 6);
@@ -54,7 +53,7 @@ function makeQuestion(): { question: string; answer: number } {
       break;
     case "-":
       a = Math.floor(Math.random() * 20) + 5;
-      b = Math.floor(Math.random() * (a - 1)) + 1; // ensure positive result
+      b = Math.floor(Math.random() * (a - 1)) + 1;
       answer = a - b;
       break;
     case "×":
@@ -71,45 +70,71 @@ const quickMaths: GameDefinition<State, Public> = {
   displayName: { en: "Quick Maths", ar: "الرياضيات السريعة" },
   durationMs: 8000,
   instructions: {
-    en: "Tap the correct answer first to win! First correct answer wins.",
-    ar: "انقر على الإجابة الصحيحة أولاً لتفوز! أول إجابة صحيحة تفوز.",
+    en: "Tap the correct answer! Both players answer — fastest correct answer wins.",
+    ar: "انقر على الإجابة الصحيحة! كلا اللاعبين يجيبان — أسرع إجابة صحيحة تفوز.",
   },
   init(playerIds) {
     const { question, answer } = makeQuestion();
     const options = makePlausibleOptions(answer);
-    return { playerIds, question, answer, options, choices: {}, firstCorrect: null };
+    return { playerIds, question, answer, options, choices: {}, finishedAt: {} };
   },
   publicState(s) {
+    const allAnswered = s.playerIds.every((id) => id in s.choices);
     return {
       question: s.question,
       options: s.options,
-      // Only reveal whether they answered, not what they chose
       choices: Object.fromEntries(s.playerIds.map((id) => [id, id in s.choices])),
-      firstCorrect: s.firstCorrect,
+      results: allAnswered
+        ? Object.fromEntries(s.playerIds.map((id) => [id, {
+            correct: s.choices[id] === s.answer,
+            elapsedMs: s.finishedAt[id] ?? 0,
+          }]))
+        : null,
     };
   },
   input(s, playerId, payload) {
-    // Each player gets exactly one attempt
     if (playerId in s.choices) return s;
     const chosen = Number((payload as { answer: unknown }).answer);
-    const newChoices = { ...s.choices, [playerId]: chosen };
-    const correct = chosen === s.answer && !s.firstCorrect ? playerId : s.firstCorrect;
-    return { ...s, choices: newChoices, firstCorrect: correct };
+    return {
+      ...s,
+      choices: { ...s.choices, [playerId]: chosen },
+      finishedAt: { ...s.finishedAt, [playerId]: Date.now() },
+    };
+  },
+  isResolved(s) {
+    return s.playerIds.every((id) => id in s.choices);
   },
   resolve(s) {
     const outcomeByPlayerId: Record<string, number> = {};
+    const results: Record<string, { correct: boolean; elapsedMs: number }> = {};
+
     for (const id of s.playerIds) {
-      if (s.firstCorrect === id) {
-        outcomeByPlayerId[id] = 1;
-      } else if (s.firstCorrect) {
-        // Someone else got it right
-        outcomeByPlayerId[id] = 0;
+      const correct = (id in s.choices) && s.choices[id] === s.answer;
+      const elapsedMs = s.finishedAt[id] ?? Infinity;
+      results[id] = { correct, elapsedMs };
+    }
+
+    const correctPlayers = s.playerIds.filter((id) => results[id].correct);
+
+    if (correctPlayers.length === 0) {
+      for (const id of s.playerIds) outcomeByPlayerId[id] = 0.5;
+    } else if (correctPlayers.length === 2) {
+      const [a, b] = s.playerIds;
+      const diff = Math.abs(results[a].elapsedMs - results[b].elapsedMs);
+      if (diff <= 50) {
+        outcomeByPlayerId[a] = 0.5;
+        outcomeByPlayerId[b] = 0.5;
       } else {
-        // No one got it right (both wrong or no answers) => draw
-        outcomeByPlayerId[id] = 0.5;
+        const faster = results[a].elapsedMs < results[b].elapsedMs ? a : b;
+        for (const id of s.playerIds) outcomeByPlayerId[id] = id === faster ? 1 : 0;
+      }
+    } else {
+      for (const id of s.playerIds) {
+        outcomeByPlayerId[id] = results[id].correct ? 1 : 0;
       }
     }
-    return { outcomeByPlayerId, stats: { answer: s.answer, choices: s.choices, winner: s.firstCorrect } };
+
+    return { outcomeByPlayerId, stats: { answer: s.answer, results } };
   },
 };
 

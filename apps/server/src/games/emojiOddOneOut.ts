@@ -13,13 +13,15 @@ interface State {
   playerIds: string[];
   cells: string[];   // 16 items: 15 same + 1 odd
   oddIdx: number;    // which index holds the odd emoji
-  answers: Record<string, number>; // playerId -> tapped idx (-1 = no tap yet key absent)
-  firstCorrect: string | null;
+  answers: Record<string, number>;    // playerId -> tapped idx
+  finishedAt: Record<string, number>; // playerId -> epoch ms when they answered
 }
+
 interface Public {
   cells: string[];
   answered: Record<string, boolean>;
-  firstCorrect: string | null;
+  // Revealed once both answered; null while waiting
+  results: Record<string, { correct: boolean; elapsedMs: number }> | null;
 }
 
 /** Fisher-Yates shuffle */
@@ -37,49 +39,76 @@ const emojiOddOneOut: GameDefinition<State, Public> = {
   displayName: { en: "Odd One Out", ar: "المختلف" },
   durationMs: 8000,
   instructions: {
-    en: "Find the one that's different! Tap it faster than your opponent.",
-    ar: "ابحث عن المختلف! انقر عليه أسرع من خصمك.",
+    en: "Find the one that's different! Both players tap — fastest correct answer wins.",
+    ar: "ابحث عن المختلف! كلا اللاعبين ينقران — أسرع إجابة صحيحة تفوز.",
   },
   init(playerIds) {
     const [majority, odd] = PAIRS[Math.floor(Math.random() * PAIRS.length)];
-    // Build 16-cell array with 15 majority + 1 odd, then shuffle
     const raw = Array(15).fill(majority) as string[];
     raw.push(odd);
     const cells = shuffle(raw);
     const oddIdx = cells.indexOf(odd);
-    return { playerIds, cells, oddIdx, answers: {}, firstCorrect: null };
+    return { playerIds, cells, oddIdx, answers: {}, finishedAt: {} };
   },
   publicState(s) {
+    const allAnswered = s.playerIds.every((id) => id in s.answers);
     return {
       cells: s.cells,
       answered: Object.fromEntries(s.playerIds.map((id) => [id, id in s.answers])),
-      firstCorrect: s.firstCorrect,
+      results: allAnswered
+        ? Object.fromEntries(s.playerIds.map((id) => [id, {
+            correct: s.answers[id] === s.oddIdx,
+            elapsedMs: s.finishedAt[id] ?? 0,
+          }]))
+        : null,
     };
   },
   input(s, playerId, payload) {
-    if (playerId in s.answers || s.firstCorrect) return s;
+    if (playerId in s.answers) return s; // already answered
     const idx = (payload as { idx: number }).idx;
-    const newAnswers = { ...s.answers, [playerId]: idx };
-    const correct = idx === s.oddIdx;
     return {
       ...s,
-      answers: newAnswers,
-      firstCorrect: correct ? playerId : s.firstCorrect,
+      answers: { ...s.answers, [playerId]: idx },
+      finishedAt: { ...s.finishedAt, [playerId]: Date.now() },
     };
+  },
+  isResolved(s) {
+    return s.playerIds.every((id) => id in s.answers);
   },
   resolve(s) {
     const outcomeByPlayerId: Record<string, number> = {};
-    if (s.firstCorrect) {
-      for (const id of s.playerIds) {
-        outcomeByPlayerId[id] = id === s.firstCorrect ? 1 : 0;
+    const results: Record<string, { correct: boolean; elapsedMs: number }> = {};
+
+    for (const id of s.playerIds) {
+      const answered = id in s.answers;
+      const correct = answered && s.answers[id] === s.oddIdx;
+      const elapsedMs = s.finishedAt[id] ?? Infinity;
+      results[id] = { correct, elapsedMs };
+    }
+
+    const correctPlayers = s.playerIds.filter((id) => results[id].correct);
+
+    if (correctPlayers.length === 0) {
+      for (const id of s.playerIds) outcomeByPlayerId[id] = 0.5;
+    } else if (correctPlayers.length === 2) {
+      const [a, b] = s.playerIds;
+      const diff = Math.abs(results[a].elapsedMs - results[b].elapsedMs);
+      if (diff <= 50) {
+        outcomeByPlayerId[a] = 0.5;
+        outcomeByPlayerId[b] = 0.5;
+      } else {
+        const faster = results[a].elapsedMs < results[b].elapsedMs ? a : b;
+        for (const id of s.playerIds) outcomeByPlayerId[id] = id === faster ? 1 : 0;
       }
     } else {
-      // No one got it right (time expired or both wrong) → draw
-      for (const id of s.playerIds) outcomeByPlayerId[id] = 0.5;
+      for (const id of s.playerIds) {
+        outcomeByPlayerId[id] = results[id].correct ? 1 : 0;
+      }
     }
+
     return {
       outcomeByPlayerId,
-      stats: { oddIdx: s.oddIdx, oddEmoji: s.cells[s.oddIdx], answers: s.answers },
+      stats: { oddIdx: s.oddIdx, oddEmoji: s.cells[s.oddIdx], results },
     };
   },
 };

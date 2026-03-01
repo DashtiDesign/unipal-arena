@@ -90,6 +90,7 @@ export interface ToggleReadyPayload { roomCode: string }
 export interface DuelResultPayload  { roomCode: string; winnerId: string | null; isDraw: boolean }
 export interface PlayAgainPayload   { roomCode: string }
 export interface GameInputPayload   { roomCode: string; payload: unknown }
+export interface GameSyncPayload    { roomCode: string; matchId: string }
 
 // ── Server -> Client payloads ─────────────────────────────────────────────────
 

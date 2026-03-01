@@ -17,7 +17,7 @@ interface Public {
 const stopAt10s: GameDefinition<State, Public> = {
   id: "stop_at_10s",
   displayName: { en: "Stop at 10s", ar: "أوقف عند 10 ثوانٍ" },
-  durationMs: 12000,
+  durationMs: 15000,
   instructions: {
     en: "Stop the timer as close to 10.000 seconds as possible!",
     ar: "أوقف المؤقت بأقرب وقت ممكن من 10 ثوانٍ بالضبط!",

@@ -13,8 +13,7 @@ interface Props {
 export default function WinnerScreen({ t, onLangToggle, playerId, leaderboard, onPlayAgain, onLeave }: Props) {
   const champion = leaderboard[0];
   const isChampion = champion?.id === playerId;
-
-  const championLabel = t.championIs.replace("{name}", champion?.name ?? "?");
+  const myPosition = leaderboard.findIndex((e) => e.id === playerId) + 1; // 1-based
 
   return (
     <>
@@ -31,8 +30,15 @@ export default function WinnerScreen({ t, onLangToggle, playerId, leaderboard, o
       <main className="flex flex-col items-center justify-center px-4 py-12 gap-6 max-w-sm mx-auto min-h-[70vh]">
         <div className="card w-full bg-base-100 shadow-xl">
           <div className="card-body items-center gap-4 py-10">
-            <span className="text-6xl">{isChampion ? "🥇" : "🏁"}</span>
-            <p className="text-2xl font-bold text-center">{championLabel}</p>
+            <span className="text-6xl">{isChampion ? "🥇" : myPosition === 2 ? "🥈" : myPosition === 3 ? "🥉" : "🏁"}</span>
+            {isChampion ? (
+              <p className="text-2xl font-bold text-center">You are the Champion! 🏆</p>
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-center">You placed #{myPosition}</p>
+                <p className="text-sm text-base-content/60">Winner: {champion?.name ?? "?"}</p>
+              </>
+            )}
           </div>
         </div>
 

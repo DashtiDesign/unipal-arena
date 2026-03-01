@@ -1,22 +1,52 @@
 import { GameComponentProps } from "./types";
 
+interface PlayerResult {
+  correct: boolean;
+  elapsedMs: number;
+}
+
 interface State {
   question: string;
   options: number[];
   choices: Record<string, boolean>; // playerId -> has answered
-  firstCorrect: string | null;
+  results: Record<string, PlayerResult> | null;
 }
 
-export default function QuickMaths({ publicState, playerId, onInput, remainingMs }: GameComponentProps) {
+export default function QuickMaths({ publicState, playerId, opponentId, onInput, remainingMs }: GameComponentProps) {
   const s = publicState as State;
-  const IAnswered = s.choices[playerId] ?? false;
+  const iAnswered = s.choices[playerId] ?? false;
 
-  if (s.firstCorrect) {
-    const iWon = s.firstCorrect === playerId;
+  // Both answered — show results
+  if (s.results) {
+    const mine = s.results[playerId];
+    const theirs = s.results[opponentId];
+    const iWon = mine?.correct && (!theirs?.correct || mine.elapsedMs < theirs.elapsedMs);
+    const isDraw = mine?.correct && theirs?.correct && Math.abs(mine.elapsedMs - theirs.elapsedMs) <= 50;
+
     return (
-      <div className="flex flex-col items-center gap-4 py-10">
-        <p className="text-5xl">{iWon ? "🎉" : "😢"}</p>
-        <p className="text-2xl font-bold">{iWon ? "Correct! You win!" : "Too slow!"}</p>
+      <div className="flex flex-col items-center gap-4 py-6 w-full">
+        <p className="text-4xl">{isDraw ? "🤝" : iWon ? "🎉" : "😢"}</p>
+        <p className="text-xl font-bold">
+          {isDraw ? "Draw!" : iWon ? "You win!" : "You lose!"}
+        </p>
+        <div className="w-full flex flex-col gap-2 max-w-xs">
+          {[
+            { label: "You", result: mine },
+            { label: "Opponent", result: theirs },
+          ].map(({ label, result }) => (
+            <div key={label} className="flex items-center justify-between p-3 bg-base-200 rounded-xl">
+              <span className="text-sm font-semibold">{label}</span>
+              <div className="text-right">
+                <p className={`font-bold text-sm ${result?.correct ? "text-success" : "text-error"}`}>
+                  {result?.correct ? "✓ Correct" : "✗ Wrong"}
+                </p>
+                <p className="text-xs text-base-content/50 tabular-nums">
+                  {result ? `${(result.elapsedMs / 1000).toFixed(2)}s` : "—"}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -28,7 +58,7 @@ export default function QuickMaths({ publicState, playerId, onInput, remainingMs
         <p className="badge badge-neutral tabular-nums">{Math.ceil(remainingMs / 1000)}s</p>
       </div>
 
-      {IAnswered ? (
+      {iAnswered ? (
         <div className="flex flex-col items-center gap-2 py-4">
           <span className="loading loading-dots loading-lg" />
           <p className="text-base-content/60 text-sm">Waiting for opponent…</p>

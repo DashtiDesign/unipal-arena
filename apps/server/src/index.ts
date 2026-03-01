@@ -15,6 +15,7 @@ import {
   ToggleReadyPayload,
   PlayAgainPayload,
   GameInputPayload,
+  GameSyncPayload,
 } from "@arena/shared";
 import { REGISTRY, nextFromDeck, freshDeck } from "./games/registry";
 
@@ -89,12 +90,12 @@ function clearGameTimer(roomCode: string) {
 }
 
 // Games that auto-resolve when a winner is found before time expires (v===1 check)
-// higher_lower and rock_paper_scissors use isResolved?() instead
+// All games with "wait for both" or custom logic use isResolved?() on GameDefinition instead
 const EARLY_RESOLVE_GAMES = new Set([
-  "quick_maths", "reaction_green", "memory_grid",
-  "emoji_odd_one_out", "tic_tac_toe",
-  // whack_a_logo and tapping_speed run to time expiry — not in this set
-  // higher_lower and rock_paper_scissors use isResolved?() on GameDefinition
+  "reaction_green",
+  // quick_maths, emoji_odd_one_out, memory_grid — wait for both players, use isResolved?()
+  // higher_lower, rock_paper_scissors, tic_tac_toe — use isResolved?()
+  // whack_a_logo, tapping_speed, stop_at_10s — run to time expiry
 ]);
 
 function resolveGame(roomCode: string) {
@@ -317,7 +318,7 @@ io.on("connection", (socket) => {
       for (const id of [arena.duel.aId, arena.duel.bId]) {
         const priv = def.privateUpdate(newState, id);
         if (priv != null) {
-          io.to(id).emit("game:private", {
+          io.to(id).emit(EVENTS.GAME_PRIVATE, {
             matchId: arena.duel.matchId,
             gameId: arena.gameId,
             data: priv,
@@ -335,6 +336,27 @@ io.on("connection", (socket) => {
       const hasWinner = Object.values(resolved.outcomeByPlayerId).some((v) => v === 1);
       if (hasWinner) resolveGame(roomCode);
     }
+  });
+
+  socket.on(EVENTS.GAME_SYNC, (payload: GameSyncPayload) => {
+    const roomCode = (payload?.roomCode ?? "").trim();
+    const arena    = arenas.get(roomCode);
+    if (!arena || arena.phase !== "DUELING" || !arena.duel) return;
+    if (arena.duel.matchId !== payload?.matchId) return;
+
+    const def   = REGISTRY.get(arena.duel.gameDefId);
+    const state = gameStates.get(roomCode);
+    if (!def || !state) return;
+
+    const remainingMs = arena.endsAt ? Math.max(0, arena.endsAt - Date.now()) : 0;
+    socket.emit(EVENTS.GAME_STATE, {
+      roomCode,
+      matchId: arena.duel.matchId,
+      gameId: arena.gameId,
+      gameDefId: arena.duel.gameDefId,
+      publicState: def.publicState(state),
+      remainingMs,
+    });
   });
 
   socket.on(EVENTS.PLAY_AGAIN, (payload: PlayAgainPayload) => {

@@ -5,7 +5,7 @@ const AREA_W = 320;
 const AREA_H = 340;
 const LOGO_SIZE = 80;
 
-interface Target { id: string; x: number; y: number }
+interface Target { id: string; x: number; y: number; isBomb: boolean }
 interface State {
   targets: Record<string, Target>;
   hits: Record<string, number>;
@@ -25,8 +25,8 @@ function UnipalLogo({ size }: { size: number }) {
 
 export default function WhackALogo({ publicState, playerId, opponentId, onInput, remainingMs }: GameComponentProps) {
   const s = publicState as State;
-  const myHits  = s.hits[playerId]   ?? 0;
-  const oppHits = s.hits[opponentId] ?? 0;
+  const myHits   = s.hits[playerId]   ?? 0;
+  const oppHits  = s.hits[opponentId] ?? 0;
   const myTarget = s.targets[playerId];
 
   function handleTap(e: React.PointerEvent) {
@@ -58,7 +58,10 @@ export default function WhackALogo({ publicState, playerId, opponentId, onInput,
         {myTarget && (
           <button
             key={myTarget.id}
-            className="absolute p-0 border-none bg-transparent active:scale-90 transition-transform duration-75"
+            className={[
+              "absolute p-0 border-none bg-transparent transition-transform duration-75",
+              myTarget.isBomb ? "active:scale-110" : "active:scale-90",
+            ].join(" ")}
             style={{
               left: myTarget.x,
               top: myTarget.y,
@@ -68,12 +71,21 @@ export default function WhackALogo({ publicState, playerId, opponentId, onInput,
             }}
             onPointerDown={handleTap}
           >
-            <UnipalLogo size={LOGO_SIZE} />
+            {myTarget.isBomb ? (
+              <div
+                className="w-full h-full flex items-center justify-center rounded-full bg-error/20 border-2 border-error animate-pulse"
+                style={{ fontSize: LOGO_SIZE * 0.6 }}
+              >
+                💣
+              </div>
+            ) : (
+              <UnipalLogo size={LOGO_SIZE} />
+            )}
           </button>
         )}
       </div>
 
-      <p className="text-xs text-base-content/40">Tap the logo — it moves on every hit!</p>
+      <p className="text-xs text-base-content/40">Tap the logo — avoid the 💣 bomb (–2 pts)!</p>
     </div>
   );
 }

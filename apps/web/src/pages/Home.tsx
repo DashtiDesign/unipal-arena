@@ -105,19 +105,50 @@ export default function Home({ t, onLangToggle, onJoined }: Props) {
 
       <main className="flex flex-col items-center justify-center px-4 py-12 gap-6">
         {view === "menu" && (
-          <div className="card w-full max-w-sm bg-base-100 shadow-xl">
-            <div className="card-body gap-4">
-              <h2 className="card-title justify-center text-2xl">{t.appName}</h2>
-              <p className="text-center text-base-content/60 text-sm">{t.tagline}</p>
-              <div className="divider" />
-              <button className="btn btn-primary btn-block" onClick={() => goTo("create")}>
-                {t.createRoom}
-              </button>
-              <button className="btn btn-outline btn-block" onClick={() => goTo("join")}>
-                {t.joinRoom}
-              </button>
+          <>
+            <div className="card w-full max-w-sm bg-base-100 shadow-xl">
+              <div className="card-body gap-4">
+                <h2 className="card-title justify-center text-2xl">{t.appName}</h2>
+                <p className="text-center text-base-content/60 text-sm">{t.tagline}</p>
+                <div className="divider" />
+                <button className="btn btn-primary btn-block" onClick={() => goTo("create")}>
+                  {t.createRoom}
+                </button>
+                <button className="btn btn-outline btn-block" onClick={() => goTo("join")}>
+                  {t.joinRoom}
+                </button>
+              </div>
             </div>
-          </div>
+
+            {/* How it works */}
+            <div className="card w-full max-w-sm bg-base-100 shadow-xl">
+              <div className="card-body gap-3 py-5">
+                <h3 className="font-semibold text-base-content/60 uppercase text-xs tracking-widest">How it works</h3>
+                <ul className="flex flex-col gap-3 text-sm">
+                  <li className="flex gap-3">
+                    <span className="text-xl leading-none">🎮</span>
+                    <span><strong>10 mini-games</strong> — quick reflex &amp; brain challenges played 1-vs-1</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="text-xl leading-none">🔄</span>
+                    <span><strong>Every player duels every other</strong> — the arena cycles through all matchups</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="text-xl leading-none">🏅</span>
+                    <span><strong>Scoring</strong> — win earns 1 pt, draw earns 0.5 pts, loss earns 0</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="text-xl leading-none">🪑</span>
+                    <span><strong>Odd players?</strong> — one player sits out each round fairly, rotating so everyone gets equal rest</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="text-xl leading-none">🏆</span>
+                    <span><strong>Champion</strong> — the player with the most points when all duels are done wins</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </>
         )}
 
         {view === "create" && (

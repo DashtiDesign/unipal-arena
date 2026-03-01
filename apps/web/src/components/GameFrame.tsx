@@ -18,18 +18,19 @@ interface Props {
 }
 
 export default function GameFrame({
-  roomCode, matchId, gameId, gameDefId, playerId, opponentId, lang, durationMs, onRemainingMs,
+  roomCode, matchId, gameDefId, playerId, opponentId, lang, durationMs, onRemainingMs,
 }: Props) {
   const [publicState, setPublicState] = useState<unknown>(null);
   const [remainingMs, setRemainingMs] = useState(durationMs);
   const [privateEvents, setPrivateEvents] = useState<unknown[]>([]);
 
-  // Reset all local game state whenever matchId changes (new duel started)
+  // Reset all local game state and request a snapshot whenever matchId changes
   useEffect(() => {
     setPublicState(null);
     setRemainingMs(durationMs);
     setPrivateEvents([]);
-  }, [matchId, durationMs]);
+    socket.emit(EVENTS.GAME_SYNC, { roomCode, matchId });
+  }, [matchId, durationMs, roomCode]);
 
   const onRemainingMsCb = useCallback((ms: number) => {
     onRemainingMs?.(ms);
@@ -37,23 +38,22 @@ export default function GameFrame({
 
   useEffect(() => {
     function onState(p: GameStatePayload) {
-      // Discard events from a previous or different match
-      if (p.matchId !== matchId || p.gameId !== gameId) return;
+      if (p.matchId !== matchId) return;
       setPublicState(p.publicState);
       setRemainingMs(p.remainingMs);
       onRemainingMsCb(p.remainingMs);
     }
     function onPrivate(p: GamePrivatePayload) {
-      if (p.matchId !== matchId || p.gameId !== gameId) return;
+      if (p.matchId !== matchId) return;
       setPrivateEvents((prev) => [...prev, p.data]);
     }
     socket.on(EVENTS.GAME_STATE, onState);
-    socket.on("game:private", onPrivate);
+    socket.on(EVENTS.GAME_PRIVATE, onPrivate);
     return () => {
       socket.off(EVENTS.GAME_STATE, onState);
-      socket.off("game:private", onPrivate);
+      socket.off(EVENTS.GAME_PRIVATE, onPrivate);
     };
-  }, [matchId, gameId, onRemainingMsCb]);
+  }, [matchId, onRemainingMsCb]);
 
   function sendInput(payload: unknown) {
     socket.emit(EVENTS.GAME_INPUT, { roomCode, payload });
@@ -62,15 +62,20 @@ export default function GameFrame({
   const entry = GAME_REGISTRY.get(gameDefId);
   const GameComponent = entry?.component;
 
+  // stop_at_10s has its own built-in timer display — hide the generic bar
+  const showProgressBar = gameDefId !== "stop_at_10s";
+
   return (
     <div className="w-full">
-      {/* Countdown bar */}
-      <div className="w-full bg-base-300 rounded-full h-2 mb-4">
-        <div
-          className="bg-primary h-2 rounded-full transition-all"
-          style={{ width: `${Math.min(100, (remainingMs / durationMs) * 100)}%` }}
-        />
-      </div>
+      {/* Countdown bar — hidden for games that render their own timer */}
+      {showProgressBar && (
+        <div className="w-full bg-base-300 rounded-full h-2 mb-4">
+          <div
+            className="bg-primary h-2 rounded-full transition-all"
+            style={{ width: `${Math.min(100, (remainingMs / durationMs) * 100)}%` }}
+          />
+        </div>
+      )}
 
       {publicState !== null && GameComponent ? (
         <GameComponent

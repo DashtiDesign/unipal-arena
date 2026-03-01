@@ -169,11 +169,11 @@ export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate,
                 const isHost = player.id === room.hostId;
                 return (
                   <li key={player.id} className="flex items-center justify-between gap-2 py-1">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className={`badge badge-sm ${player.isReady ? "badge-success" : "badge-ghost"}`} />
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <div className={`badge badge-sm shrink-0 ${player.isReady ? "badge-success" : "badge-ghost"}`} />
                       <span className="truncate font-medium">{player.name}</span>
-                      {isMe   && <span className="badge badge-outline badge-xs">{t.youLabel}</span>}
-                      {isHost && <span className="badge badge-primary badge-xs">{t.hostLabel}</span>}
+                      {isMe   && <span className="badge badge-outline badge-xs shrink-0">{t.youLabel}</span>}
+                      {isHost && <span className="badge badge-primary badge-xs shrink-0">{t.hostLabel}</span>}
                     </div>
                     <span className={`text-xs shrink-0 ${player.isReady ? "text-success" : "text-base-content/40"}`}>
                       {player.isReady ? t.ready : t.notReady}

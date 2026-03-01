@@ -21,6 +21,8 @@ export const SERVER_EVENTS = {
   // Game
   GAME_STATE: "game:state",
   GAME_RESULT: "game:result",
+  GAME_PRIVATE: "game:private",
+  GAME_SYNC: "game:sync",
 } as const;
 
 export const EVENTS = { ...CLIENT_EVENTS, ...SERVER_EVENTS } as const;

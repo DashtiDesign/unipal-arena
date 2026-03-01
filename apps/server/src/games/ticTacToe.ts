@@ -105,11 +105,14 @@ const ticTacToe: GameDefinition<State, Public> = {
     };
   },
 
-  resolve(s) {
-    // If game ended normally, use stored result
-    let { winner, isDraw, timedOut } = s;
+  isResolved(s) {
+    return !!(s.winner || s.isDraw || s.timedOut);
+  },
 
-    // If game is still in progress when total time expired, current player timed out
+  resolve(s) {
+    // If game ended normally via input, use stored result.
+    // If total-time expired mid-game, treat the player whose turn it is as having timed out.
+    let { winner, isDraw, timedOut } = s;
     if (!winner && !isDraw && !timedOut) {
       const opponent = s.playerIds.find((id) => id !== s.turn)!;
       winner = opponent;
