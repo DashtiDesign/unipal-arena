@@ -12,7 +12,13 @@
       "Bash(xargs grep -l \"buttonVariants\")",
       "Bash(\"c:/Users/Ali Dashti/Documents/Code/unipal-arena/apps/web/src/index.css\":*)",
       "Bash(python3:*)",
-      "Bash(pnpm --filter web build)"
+      "Bash(pnpm --filter web build)",
+      "Bash(node -e \"const p=require\\(''c:/Users/Ali Dashti/Documents/Code/unipal-arena/node_modules/.pnpm/react-aria-components@1.15._8a8d079c033d0a23c8d7f40fd314a43f/node_modules/react-aria-components/package.json''\\); console.log\\(''version:'', p.version, ''peer react:'', p.peerDependencies?.react\\)\")",
+      "Bash(node -e \":*)",
+      "Bash(timeout 15 npx vite build --mode development)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(pnpm --filter web install)",
+      "Bash(npx tsc --noEmit)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Ali Dashti\\Documents\\Code\\unipal-arena",
