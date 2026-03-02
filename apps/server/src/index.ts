@@ -40,7 +40,11 @@ if (process.env.NODE_ENV === "production") {
 }
 
 const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: "*" } });
+const allowedOrigins =
+  process.env.NODE_ENV === "production"
+    ? false // same-origin; static files are served from this process
+    : ["http://localhost:5173", "http://127.0.0.1:5173"];
+const io = new Server(httpServer, { cors: { origin: allowedOrigins } });
 
 // ── State maps ───────────────────────────────────────────────────────────────
 

@@ -1,7 +1,6 @@
 import { GameDefinition } from "@arena/shared";
 
 const TARGET_MS = 10000;
-const DRAW_THRESHOLD_MS = 50; // within 50ms = draw
 
 interface State {
   playerIds: string[];
@@ -49,7 +48,8 @@ const stopAt10s: GameDefinition<State, Public> = {
     const minDiff = Math.min(...diffs.map((d) => d.diff));
     const outcomeByPlayerId: Record<string, number> = {};
 
-    if (Math.abs(diffs[0].diff - diffs[1].diff) <= DRAW_THRESHOLD_MS) {
+    // Strict millisecond comparison — exact same delta = draw, otherwise closer wins
+    if (diffs[0].diff === diffs[1].diff) {
       for (const { id } of diffs) outcomeByPlayerId[id] = 0.5;
     } else {
       for (const d of diffs) {

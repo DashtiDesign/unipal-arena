@@ -34,9 +34,8 @@ export default function StopAt10s({ publicState, playerId, onInput }: GameCompon
 
   const displayMs = myStopped ? (s.stopTimes[playerId] ?? elapsed) : elapsed;
   const timerColor =
-    displayMs < 9000  ? "text-(--foreground)" :
-    displayMs < 9800  ? "text-(--warning)" :
-    displayMs <= 10200 ? "text-(--success)" :
+    displayMs < 9000 ? "text-(--foreground)" :
+    displayMs < 10000 ? "text-(--warning)" :
     "text-(--danger)";
 
   return (

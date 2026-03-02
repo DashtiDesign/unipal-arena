@@ -27,10 +27,10 @@ const VALID = new Set<string>(["rock", "paper", "scissors"]);
 const rockPaperScissors: GameDefinition<State, Public> = {
   id: "rock_paper_scissors",
   displayName: { en: "Rock Paper Scissors", ar: "حجر ورق مقص" },
-  durationMs: 30_000,
+  durationMs: 600_000, // no practical timer — game ends only when a winner emerges
   instructions: {
-    en: "Choose rock, paper, or scissors. Both choices are revealed only when both players pick. Ties replay until someone wins — or the clock runs out!",
-    ar: "اختر حجر أو ورق أو مقص. تُكشف الاختيارات فقط عندما يختار كلا اللاعبين. التعادل يُعيد اللعب حتى يفوز أحدهم — أو ينتهي الوقت!",
+    en: "Choose rock, paper, or scissors. Both choices are revealed only when both players pick. Ties replay until someone wins!",
+    ar: "اختر حجر أو ورق أو مقص. تُكشف الاختيارات فقط عندما يختار كلا اللاعبين. التعادل يُعيد اللعب حتى يفوز أحدهم!",
   },
 
   init(playerIds) {

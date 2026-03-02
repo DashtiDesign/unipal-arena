@@ -3,29 +3,32 @@ import { GameDefinition } from "@arena/shared";
 const LOGO_SIZE = 80; // px — matches client logo size
 const AREA_W = 320;   // safe play area width (client uses same constant)
 const AREA_H = 340;   // safe play area height
+const MAX_LOGOS = 3;  // max simultaneous logos per player
 const MAX_BOMBS = 3;  // max bomb appearances per player per match
 const BOMB_CHANCE = 1 / 6;
+const MIN_DIST = LOGO_SIZE + 8; // minimum centre-to-centre distance between any two targets
+const MAX_PLACEMENT_TRIES = 20;
 
 interface Target {
   id: string;
   x: number;
   y: number;
+  isBomb: boolean;
 }
 
 interface PlayerSlot {
-  logo: Target;
-  bomb: Target | null; // present alongside logo when a bomb is active
+  targets: Target[];  // all active targets (logos + at most 1 bomb)
   bombsShown: number;
 }
 
 interface State {
   playerIds: string[];
-  slots: Record<string, PlayerSlot>; // per-player
-  hits: Record<string, number>;      // net score per player (can go negative)
+  slots: Record<string, PlayerSlot>;
+  hits: Record<string, number>;
 }
 
 interface Public {
-  slots: Record<string, { logo: Target; bomb: Target | null }>;
+  slots: Record<string, { targets: Target[] }>;
   hits: Record<string, number>;
 }
 
@@ -34,26 +37,52 @@ function nextId(): string {
   return `t${Date.now()}-${_counter++}`;
 }
 
-function randomPos(): { x: number; y: number } {
+/** Try to place a new target that doesn't overlap existing ones. Falls back to random after MAX_PLACEMENT_TRIES. */
+function placeTarget(existing: Target[], isBomb: boolean): Target {
+  for (let i = 0; i < MAX_PLACEMENT_TRIES; i++) {
+    const x = Math.floor(Math.random() * (AREA_W - LOGO_SIZE));
+    const y = Math.floor(Math.random() * (AREA_H - LOGO_SIZE));
+    // centre-to-centre distance check
+    const cx = x + LOGO_SIZE / 2;
+    const cy = y + LOGO_SIZE / 2;
+    const overlaps = existing.some((t) => {
+      const dx = cx - (t.x + LOGO_SIZE / 2);
+      const dy = cy - (t.y + LOGO_SIZE / 2);
+      return Math.sqrt(dx * dx + dy * dy) < MIN_DIST;
+    });
+    if (!overlaps) return { id: nextId(), x, y, isBomb };
+  }
+  // fallback — just place randomly (shouldn't happen often)
   return {
+    id: nextId(),
     x: Math.floor(Math.random() * (AREA_W - LOGO_SIZE)),
     y: Math.floor(Math.random() * (AREA_H - LOGO_SIZE)),
+    isBomb,
   };
 }
 
-function randomTarget(): Target {
-  return { id: nextId(), ...randomPos() };
+/** Build the initial slot: MAX_LOGOS logos, no bomb on first spawn. */
+function initSlot(): PlayerSlot {
+  const targets: Target[] = [];
+  for (let i = 0; i < MAX_LOGOS; i++) {
+    targets.push(placeTarget(targets, false));
+  }
+  return { targets, bombsShown: 0 };
 }
 
-/** Spawn a fresh logo + optional bomb. */
-function spawnSlot(bombsShownSoFar: number): PlayerSlot {
-  const canShowBomb = bombsShownSoFar < MAX_BOMBS;
+/** After a logo is tapped: replace it with a new logo (and maybe add a bomb if none active). */
+function spawnLogo(slot: PlayerSlot): PlayerSlot {
+  const hasBomb = slot.targets.some((t) => t.isBomb);
+  const canShowBomb = !hasBomb && slot.bombsShown < MAX_BOMBS;
   const showBomb = canShowBomb && Math.random() < BOMB_CHANCE;
-  const bombsShown = bombsShownSoFar + (showBomb ? 1 : 0);
+  const newTargets = [...slot.targets];
+  newTargets.push(placeTarget(newTargets, false));
+  if (showBomb) {
+    newTargets.push(placeTarget(newTargets, true));
+  }
   return {
-    logo: randomTarget(),
-    bomb: showBomb ? randomTarget() : null,
-    bombsShown,
+    targets: newTargets,
+    bombsShown: slot.bombsShown + (showBomb ? 1 : 0),
   };
 }
 
@@ -62,14 +91,13 @@ const whackALogo: GameDefinition<State, Public> = {
   displayName: { en: "Whack a Logo", ar: "اضرب الشعار" },
   durationMs: 15000,
   instructions: {
-    en: "Tap the logo (+1 pt) as fast as you can! A 💣 bomb may appear — tap it for −2 pts, or tap the logo to clear both. Most points wins.",
-    ar: "انقر على الشعار (+1 نقطة) بأسرع ما يمكن! قد تظهر 💣 قنبلة — انقرها مقابل −2 نقطة، أو انقر الشعار لمسحها معاً. الأكثر نقاطاً يفوز.",
+    en: "Tap the logo (+1 pt) as fast as you can! A 💣 bomb may appear — tap it for −2 pts. Most points wins.",
+    ar: "انقر على الشعار (+1 نقطة) بأسرع ما يمكن! قد تظهر 💣 قنبلة — انقرها مقابل −2 نقطة. الأكثر نقاطاً يفوز.",
   },
   init(playerIds) {
     const slots: Record<string, PlayerSlot> = {};
     for (const id of playerIds) {
-      // First slot is always safe (no bomb)
-      slots[id] = { logo: randomTarget(), bomb: null, bombsShown: 0 };
+      slots[id] = initSlot();
     }
     return {
       playerIds,
@@ -80,7 +108,7 @@ const whackALogo: GameDefinition<State, Public> = {
   publicState(s) {
     return {
       slots: Object.fromEntries(
-        s.playerIds.map((id) => [id, { logo: s.slots[id].logo, bomb: s.slots[id].bomb }])
+        s.playerIds.map((id) => [id, { targets: s.slots[id].targets }])
       ),
       hits: s.hits,
     };
@@ -90,33 +118,29 @@ const whackALogo: GameDefinition<State, Public> = {
     const slot = s.slots[playerId];
     if (!slot) return s;
 
-    // Bomb tapped: deduct points, clear bomb only — logo stays
-    if (slot.bomb && slot.bomb.id === targetId) {
-      const newScore = (s.hits[playerId] ?? 0) - 2;
+    const tIdx = slot.targets.findIndex((t) => t.id === targetId);
+    if (tIdx === -1) return s; // stale tap, ignore
+
+    const tapped = slot.targets[tIdx];
+    const remaining = slot.targets.filter((_, i) => i !== tIdx);
+
+    if (tapped.isBomb) {
+      // Bomb tapped: −2 pts, remove bomb only
       return {
         ...s,
-        hits: { ...s.hits, [playerId]: newScore },
-        slots: {
-          ...s.slots,
-          [playerId]: { ...slot, bomb: null },
-        },
+        hits: { ...s.hits, [playerId]: (s.hits[playerId] ?? 0) - 2 },
+        slots: { ...s.slots, [playerId]: { ...slot, targets: remaining } },
       };
     }
 
-    // Logo tapped: +1 pt, spawn entirely new slot (new logo + maybe bomb)
-    if (slot.logo.id === targetId) {
-      const newScore = (s.hits[playerId] ?? 0) + 1;
-      return {
-        ...s,
-        hits: { ...s.hits, [playerId]: newScore },
-        slots: {
-          ...s.slots,
-          [playerId]: spawnSlot(slot.bombsShown),
-        },
-      };
-    }
-
-    return s; // stale tap, ignore
+    // Logo tapped: +1 pt, remove this logo and spawn a replacement
+    const afterRemove: PlayerSlot = { ...slot, targets: remaining };
+    const newSlot = spawnLogo(afterRemove);
+    return {
+      ...s,
+      hits: { ...s.hits, [playerId]: (s.hits[playerId] ?? 0) + 1 },
+      slots: { ...s.slots, [playerId]: newSlot },
+    };
   },
   resolve(s) {
     const sorted = [...s.playerIds].sort((a, b) => (s.hits[b] ?? 0) - (s.hits[a] ?? 0));
