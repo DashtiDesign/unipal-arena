@@ -45,7 +45,7 @@ const gameTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function freshArena(): ArenaState {
-  return { phase: "LOBBY", duel: null, benchedId: null, gameId: 0, startedAt: null, endsAt: null, gameMeta: null };
+  return { phase: "LOBBY", duel: null, benchedId: null, gameId: 0, startedAt: null, endsAt: null, gameMeta: null, lastResult: null, lastGameResult: null };
 }
 
 function generateRoomCode(): string {
@@ -136,7 +136,16 @@ function resolveGame(roomCode: string) {
 
   const lb = leaderboard(room);
   arena.phase = "RESULT";
+  arena.lastResult = { winnerId, isDraw, deltaScores, leaderboard: lb };
+  arena.lastGameResult = {
+    roomCode,
+    matchId: arena.duel.matchId,
+    gameId: arena.gameId,
+    gameDefId: arena.duel.gameDefId,
+    result,
+  };
   broadcastArena(roomCode);
+  // Keep separate events for clients that may catch them
   io.to(roomCode).emit(EVENTS.DUEL_RESULT, { winnerId, isDraw, deltaScores, leaderboard: lb });
 
   const champion = room.players.find((p) => p.score >= WIN_SCORE);
@@ -180,18 +189,20 @@ function scheduleDuel(roomCode: string) {
 
   const matchId = randomUUID();
 
-  arena.phase     = "PRE_ROUND";
-  arena.duel      = { aId, bId, gameDefId: gameDef.id, matchId };
-  arena.gameMeta  = {
+  arena.phase          = "PRE_ROUND";
+  arena.duel           = { aId, bId, gameDefId: gameDef.id, matchId };
+  arena.gameMeta       = {
     gameDefId: gameDef.id,
     displayName: gameDef.displayName,
     instructions: gameDef.instructions,
     durationMs: gameDef.durationMs,
   };
-  arena.benchedId = benchedId;
-  arena.gameId   += 1;
-  arena.startedAt = null;
-  arena.endsAt    = null;
+  arena.benchedId      = benchedId;
+  arena.gameId        += 1;
+  arena.startedAt      = null;
+  arena.endsAt         = null;
+  arena.lastResult     = null;
+  arena.lastGameResult = null;
 
   broadcastArena(roomCode);
 }
@@ -215,7 +226,7 @@ function startGame(roomCode: string) {
   broadcastArena(roomCode);
   broadcastGameState(roomCode);
   // Re-broadcast after 150ms to reduce mount-race missed events
-  setTimeout(() => broadcastGameState(roomCode), 150);
+  setTimeout(() => { broadcastArena(roomCode); broadcastGameState(roomCode); }, 150);
 
   const t = setTimeout(() => resolveGame(roomCode), def.durationMs);
   gameTimers.set(roomCode, t);
@@ -346,24 +357,23 @@ io.on("connection", (socket) => {
     const room     = rooms.get(roomCode);
     const arena    = arenas.get(roomCode);
 
+    console.log(`[game:sync] room=${roomCode} socket=${socket.id} phase=${arena?.phase ?? "none"} matchId=${arena?.duel?.matchId ?? "none"}`);
+
     // Room not found — nothing to do
     if (!room) return;
 
-    // Arena not in DUELING or no active duel — push current arena so client can recover its phase
-    if (!arena || arena.phase !== "DUELING" || !arena.duel) {
-      if (arena) socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
-      return;
-    }
+    // Always push current arena so client has the right phase/matchId
+    if (arena) socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
 
-    // Always push current arena so client has the right matchId/phase
-    socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
+    // Only emit game state when actively dueling with a live game state
+    if (!arena || arena.phase !== "DUELING" || !arena.duel) return;
 
-    // Stale matchId just needs the arena update above; still send game state for the new matchId
     const def   = REGISTRY.get(arena.duel.gameDefId);
     const state = gameStates.get(roomCode);
     if (!def || !state) return;
 
     const remainingMs = arena.endsAt ? Math.max(0, arena.endsAt - Date.now()) : 0;
+    console.log(`[game:sync] emitting GAME_STATE room=${roomCode} socket=${socket.id} matchId=${arena.duel.matchId}`);
     socket.emit(EVENTS.GAME_STATE, {
       roomCode,
       matchId: arena.duel.matchId,

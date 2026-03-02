@@ -43,6 +43,8 @@ export interface ArenaState {
   startedAt: number | null;
   endsAt: number | null;
   gameMeta: GameMeta | null; // set during PRE_ROUND, kept through DUELING
+  lastResult: DuelResultBroadcast | null;
+  lastGameResult: GameResultPayload | null;
 }
 
 export interface LeaderboardEntry {

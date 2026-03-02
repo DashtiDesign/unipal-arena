@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { T, Lang } from "../i18n";
 import { socket } from "../socket";
 import { EVENTS } from "@arena/shared";
-import type { Room, ArenaState, ArenaUpdatePayload, LeaderboardEntry, GameResultPayload } from "@arena/shared";
+import type { Room, ArenaState, ArenaUpdatePayload } from "@arena/shared";
 import type { Session } from "../App";
 import PreRound from "./arena/PreRound";
 import InGame from "./arena/InGame";
@@ -18,36 +18,17 @@ interface Props {
   onLeave: () => void;
 }
 
-interface DuelResultData {
-  winnerId: string | null;
-  isDraw: boolean;
-  deltaScores: Record<string, number>;
-  leaderboard: LeaderboardEntry[];
-}
-
 export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate, onLeave }: Props) {
   const { roomCode, playerId, room, arena } = session;
-  const [lastResult, setLastResult] = useState<DuelResultData | null>(null);
-  const [lastGameResult, setLastGameResult] = useState<GameResultPayload | null>(null);
 
   useEffect(() => {
     function onArenaUpdate(payload: ArenaUpdatePayload) {
-      if (!payload?.room || !payload?.arena) return;
+      if (!payload?.room) return;
       onSessionUpdate(payload.room, payload.arena);
     }
-    function onDuelResult(payload: DuelResultData) {
-      setLastResult(payload);
-    }
-    function onGameResult(payload: GameResultPayload) {
-      setLastGameResult(payload);
-    }
     socket.on(EVENTS.ARENA_UPDATE, onArenaUpdate);
-    socket.on(EVENTS.DUEL_RESULT, onDuelResult);
-    socket.on(EVENTS.GAME_RESULT, onGameResult);
     return () => {
       socket.off(EVENTS.ARENA_UPDATE, onArenaUpdate);
-      socket.off(EVENTS.DUEL_RESULT, onDuelResult);
-      socket.off(EVENTS.GAME_RESULT, onGameResult);
     };
   }, [onSessionUpdate]);
 
@@ -107,18 +88,14 @@ export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate,
   }
 
   // ── RESULT ───────────────────────────────────────────────────────────────
-  if (arena.phase === "RESULT" && lastResult) {
-    // Only show game result if it matches the current matchId (not stale)
-    const matchedGameResult = lastGameResult && arena.duel?.matchId === lastGameResult.matchId
-      ? lastGameResult
-      : null;
+  if (arena.phase === "RESULT" && arena.lastResult) {
     return (
       <DuelResult
         t={t}
         onLangToggle={onLangToggle}
         playerId={playerId}
-        result={lastResult}
-        gameResult={matchedGameResult}
+        result={arena.lastResult}
+        gameResult={arena.lastGameResult}
         room={room}
         onLeave={handleLeave}
       />
@@ -199,15 +176,27 @@ export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate,
         </div>
 
         {/* Ready / start button */}
-        <button
-          className={`btn btn-block ${isReady ? "btn-outline btn-success" : "btn-primary"}`}
-          disabled={allReady}
-          onClick={handleToggleReady}
-        >
-          {allReady
-            ? <><span className="loading loading-spinner loading-sm" /> {t.waitingForPlayers}</>
-            : isReady ? `✓ ${t.ready}` : t.ready}
-        </button>
+        {allReady ? (
+          <div className="flex flex-col items-center gap-1 w-full">
+            <button
+              className="btn btn-block btn-outline btn-success"
+              onClick={handleToggleReady}
+            >
+              ✓ {t.ready}
+            </button>
+            <p className="text-xs text-base-content/50 flex items-center gap-1">
+              <span className="loading loading-spinner loading-xs" />
+              {t.waitingForPlayers}
+            </p>
+          </div>
+        ) : (
+          <button
+            className={`btn btn-block ${isReady ? "btn-outline btn-success" : "btn-primary"}`}
+            onClick={handleToggleReady}
+          >
+            {isReady ? `✓ ${t.ready}` : t.ready}
+          </button>
+        )}
       </main>
     </>
   );
