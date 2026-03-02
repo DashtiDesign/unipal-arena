@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { T } from "../i18n";
 import { socket } from "../socket";
 import { EVENTS } from "@arena/shared";
@@ -19,18 +19,65 @@ function getDeepLinkCode(): string {
   return /^\d{4}$/.test(code) ? code : "";
 }
 
+/** Ensures socket is connected, then calls `emit`. Rejects on connect_error or timeout. */
+function connectAndEmit(emit: () => void, timeoutMs = 8000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (socket.connected) {
+      emit();
+      resolve();
+      return;
+    }
+
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      socket.off("connect", onConnect);
+      socket.off("connect_error", onError);
+      reject(new Error("timeout"));
+    }, timeoutMs);
+
+    function onConnect() {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.off("connect_error", onError);
+      emit();
+      resolve();
+    }
+
+    function onError(err: Error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.off("connect", onConnect);
+      reject(err);
+    }
+
+    socket.once("connect", onConnect);
+    socket.once("connect_error", onError);
+    socket.connect();
+  });
+}
+
 export default function Home({ t, onJoined }: Props) {
   const [view, setView] = useState<View>(() => (getDeepLinkCode() ? "join" : "menu"));
   const [playerName, setPlayerName] = useState("");
   const [roomCode, setRoomCode] = useState(getDeepLinkCode);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const isMounted = useRef(true);
 
   useEffect(() => {
-    socket.connect();
+    isMounted.current = true;
+
+    // Pre-connect eagerly so the socket is likely ready by the time user submits
+    if (!socket.connected) socket.connect();
+
     let pendingSession: Omit<Session, "arena"> | null = null;
 
     function onJoinedEvent(payload: RoomJoinedPayload) {
+      if (!isMounted.current) return;
       setLoading(false);
       const url = new URL(window.location.href);
       url.searchParams.delete("room");
@@ -49,34 +96,62 @@ export default function Home({ t, onJoined }: Props) {
       }
     }
 
-    function onError(payload: RoomErrorPayload) {
+    function onRoomError(payload: RoomErrorPayload) {
+      if (!isMounted.current) return;
       setLoading(false);
       const key = payload.messageKey as keyof T;
       setError((t[key] as string | undefined) ?? t.err_unknown);
     }
 
+    // Reconnect when app comes back to foreground (iOS Safari backgrounding drops WS)
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible" && !socket.connected) {
+        socket.connect();
+      }
+    }
+
     socket.on(EVENTS.ROOM_JOINED, onJoinedEvent);
     socket.on(EVENTS.ARENA_UPDATE, onArenaUpdate);
-    socket.on(EVENTS.ROOM_ERROR, onError);
+    socket.on(EVENTS.ROOM_ERROR, onRoomError);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
+      isMounted.current = false;
       socket.off(EVENTS.ROOM_JOINED, onJoinedEvent);
       socket.off(EVENTS.ARENA_UPDATE, onArenaUpdate);
-      socket.off(EVENTS.ROOM_ERROR, onError);
+      socket.off(EVENTS.ROOM_ERROR, onRoomError);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [t, onJoined]);
 
-  function handleCreate() {
-    if (!playerName.trim()) return;
+  async function handleCreate() {
+    const name = playerName.trim();
+    if (!name) return;
     setError("");
     setLoading(true);
-    socket.emit(EVENTS.CREATE_ROOM, { name: playerName.trim() });
+    try {
+      await connectAndEmit(() => socket.emit(EVENTS.CREATE_ROOM, { name }));
+    } catch {
+      if (isMounted.current) {
+        setLoading(false);
+        setError("Couldn't connect. Try again.");
+      }
+    }
   }
 
-  function handleJoin() {
-    if (!playerName.trim() || roomCode.length !== 4) return;
+  async function handleJoin() {
+    const name = playerName.trim();
+    if (!name || roomCode.length !== 4) return;
     setError("");
     setLoading(true);
-    socket.emit(EVENTS.JOIN_ROOM, { name: playerName.trim(), roomCode });
+    try {
+      await connectAndEmit(() => socket.emit(EVENTS.JOIN_ROOM, { name, roomCode }));
+    } catch {
+      if (isMounted.current) {
+        setLoading(false);
+        setError("Couldn't connect. Try again.");
+      }
+    }
   }
 
   function goTo(v: View) {
