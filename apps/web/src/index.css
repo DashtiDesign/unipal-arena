@@ -1,6 +1,14 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "@heroui/styles";
+
+/* Brand primary = #001a9c — override accent in both themes */
+:root,
+.light,
+[data-theme="light"],
+.dark,
+[data-theme="dark"] {
+  --accent: oklch(26.7% 0.257 264.1);         /* #001a9c */
+  --accent-foreground: oklch(100% 0 0);        /* white */
+}
 
 /* Safe-area insets for iOS notch / home bar */
 :root {
@@ -11,6 +19,8 @@
 }
 
 body {
+  background-color: var(--background);
+  color: var(--foreground);
   padding-top: var(--sat);
   padding-bottom: var(--sab);
 }

@@ -3,7 +3,20 @@
     "allow": [
       "Read(//c/Users/Ali Dashti/.claude/projects/c--Users-Ali-Dashti-Documents-Code-arena-alhalba/memory/**)",
       "Bash(pnpm build)",
-      "Bash(pnpm exec tsc --noEmit)"
+      "Bash(pnpm exec tsc --noEmit)",
+      "WebFetch(domain:v3.heroui.com)",
+      "WebFetch(domain:heroui.com)",
+      "Bash(pnpm install)",
+      "WebFetch(domain:www.heroui.com)",
+      "Read(//c/Users/Ali Dashti/.claude/projects/c--Users-Ali-Dashti-Documents-Code-unipal-arena/memory/**)",
+      "Bash(xargs grep -l \"buttonVariants\")",
+      "Bash(\"c:/Users/Ali Dashti/Documents/Code/unipal-arena/apps/web/src/index.css\":*)",
+      "Bash(python3:*)",
+      "Bash(pnpm --filter web build)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Ali Dashti\\Documents\\Code\\unipal-arena",
+      "c:\\Users\\Ali Dashti\\.claude\\projects\\c--Users-Ali-Dashti-Documents-Code-unipal-arena"
     ]
   }
 }

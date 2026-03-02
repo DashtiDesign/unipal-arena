@@ -1,5 +1,6 @@
 import { T, Lang } from "../../i18n";
 import type { Room, ArenaState } from "@arena/shared";
+import { Button, Card, Chip } from "@heroui/react";
 
 interface Props {
   t: T;
@@ -27,69 +28,56 @@ export default function PreRound({
     .replace("{a}", playerA?.name ?? "?")
     .replace("{b}", playerB?.name ?? "?");
 
-  const instrText = meta
-    ? (lang === "ar" ? meta.instructions.ar : meta.instructions.en)
-    : "";
-
-  const gameName = meta
-    ? (lang === "ar" ? meta.displayName.ar : meta.displayName.en)
-    : "";
+  const instrText = meta ? (lang === "ar" ? meta.instructions.ar : meta.instructions.en) : "";
+  const gameName  = meta ? (lang === "ar" ? meta.displayName.ar : meta.displayName.en) : "";
 
   return (
     <>
-      <div className="navbar bg-base-100 shadow-sm px-4">
-        <div className="flex-1">
-          <span className="text-xl font-bold tracking-tight">{t.appName}</span>
-        </div>
-        <div className="flex-none gap-1">
-          <button className="btn btn-ghost btn-sm" onClick={onLangToggle}>{t.lang}</button>
-          <button className="btn btn-ghost btn-sm text-error" onClick={onLeave}>✕</button>
+      <div className="flex items-center justify-between px-4 py-3 bg-(--surface) border-b border-(--border) shadow-sm">
+        <span className="text-xl font-bold tracking-tight">{t.appName}</span>
+        <div className="flex gap-1">
+          <Button variant="ghost" size="sm" onPress={onLangToggle}>{t.lang}</Button>
+          <Button variant="ghost" size="sm" className="text-(--danger)" onPress={onLeave}>✕</Button>
         </div>
       </div>
 
       <main className="flex flex-col items-center px-4 py-6 gap-4 max-w-sm mx-auto">
-        {/* Duel announcement */}
-        <div className="card w-full bg-base-100 shadow-xl">
-          <div className="card-body items-center gap-2 py-5">
-            <p className="text-xs text-base-content/50 uppercase tracking-widest">🥊 Next Duel</p>
+        <Card className="w-full">
+          <Card.Content className="flex flex-col items-center gap-2 py-5 px-4">
+            <p className="text-xs text-(--muted) uppercase tracking-widest">🥊 Next Duel</p>
             <p className="text-2xl font-bold text-center">{duelLabel}</p>
-            {isBenched && (
-              <p className="badge badge-ghost mt-1">{t.benchedThisDuel}</p>
-            )}
-          </div>
-        </div>
+            {isBenched && <Chip size="sm" color="default" variant="secondary">{t.benchedThisDuel}</Chip>}
+          </Card.Content>
+        </Card>
 
-        {/* Game info card */}
         {meta && (
-          <div className="card w-full bg-primary text-primary-content shadow-xl">
-            <div className="card-body gap-3 py-6">
+          <Card className="w-full bg-(--accent) text-(--accent-foreground)">
+            <Card.Content className="flex flex-col gap-3 py-6 px-4">
               <p className="text-xs uppercase tracking-widest opacity-70">Game</p>
               <p className="text-3xl font-bold">{gameName}</p>
-              <div className="divider my-0 opacity-30" />
+              <hr className="opacity-30" />
               <p className="text-sm leading-relaxed opacity-90">{instrText}</p>
               <p className="text-xs opacity-60">⏱ {meta.durationMs / 1000}s</p>
-            </div>
-          </div>
+            </Card.Content>
+          </Card>
         )}
 
-        {/* Ready button — only for duelers */}
         {amDueler && !isBenched && (
           !isReady ? (
-            <button className="btn btn-success btn-block btn-lg" onClick={onToggleReady}>
+            <Button variant="primary" fullWidth size="lg" onPress={onToggleReady}>
               {t.ready}
-            </button>
+            </Button>
           ) : (
             <div className="flex flex-col items-center gap-2 w-full">
-              <span className="badge badge-success badge-lg py-3 px-6">✓ {t.ready}</span>
-              <p className="text-sm text-base-content/50">{t.waitingForOpponent}</p>
+              <Chip size="lg" color="success" variant="soft">✓ {t.ready}</Chip>
+              <p className="text-sm text-(--muted)">{t.waitingForOpponent}</p>
             </div>
           )
         )}
 
-        {/* Leaderboard */}
-        <div className="card w-full bg-base-100 shadow-xl">
-          <div className="card-body gap-2 py-4">
-            <h3 className="font-semibold text-base-content/60 uppercase text-xs tracking-widest">{t.players}</h3>
+        <Card className="w-full">
+          <Card.Content className="flex flex-col gap-2 py-4 px-4">
+            <h3 className="font-semibold text-(--muted) uppercase text-xs tracking-widest">{t.players}</h3>
             <ul className="flex flex-col gap-1">
               {[...room.players].sort((a, b) => b.score - a.score).map((p) => (
                 <li key={p.id} className="flex justify-between text-sm">
@@ -98,8 +86,8 @@ export default function PreRound({
                 </li>
               ))}
             </ul>
-          </div>
-        </div>
+          </Card.Content>
+        </Card>
       </main>
     </>
   );

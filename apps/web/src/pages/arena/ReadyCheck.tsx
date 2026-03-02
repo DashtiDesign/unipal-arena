@@ -1,5 +1,6 @@
 import { T, Lang } from "../../i18n";
 import type { Room, ArenaState } from "@arena/shared";
+import { Button, Card, Chip } from "@heroui/react";
 import GameFrame from "../../components/GameFrame";
 
 interface Props {
@@ -24,9 +25,7 @@ export default function ReadyCheck({
 
   const isDueling = arena.phase === "DUELING";
   const amDueler  = arena.duel ? (playerId === arena.duel.aId || playerId === arena.duel.bId) : false;
-  const opponentId = arena.duel
-    ? (playerId === arena.duel.aId ? arena.duel.bId : arena.duel.aId)
-    : "";
+  const opponentId = arena.duel ? (playerId === arena.duel.aId ? arena.duel.bId : arena.duel.aId) : "";
 
   const duelLabel = t.duelAnnounce
     .replace("{a}", playerA?.name ?? "?")
@@ -34,55 +33,48 @@ export default function ReadyCheck({
 
   return (
     <>
-      <div className="navbar bg-base-100 shadow-sm px-4">
-        <div className="flex-1">
-          <span className="text-xl font-bold tracking-tight">{t.appName}</span>
-        </div>
-        <div className="flex-none gap-1">
-          <button className="btn btn-ghost btn-sm" onClick={onLangToggle}>{t.lang}</button>
-          <button className="btn btn-ghost btn-sm text-error" onClick={onLeave}>✕</button>
+      <div className="flex items-center justify-between px-4 py-3 bg-(--surface) border-b border-(--border) shadow-sm">
+        <span className="text-xl font-bold tracking-tight">{t.appName}</span>
+        <div className="flex gap-1">
+          <Button variant="ghost" size="sm" onPress={onLangToggle}>{t.lang}</Button>
+          <Button variant="ghost" size="sm" className="text-(--danger)" onPress={onLeave}>✕</Button>
         </div>
       </div>
 
       <main className="flex flex-col items-center px-4 py-8 gap-6 max-w-sm mx-auto">
-        {/* Benched */}
         {isBenched && (
-          <div className="card w-full bg-base-100 shadow-xl">
-            <div className="card-body items-center gap-4 py-10">
+          <Card className="w-full">
+            <Card.Content className="flex flex-col items-center gap-4 py-10 px-4">
               <span className="text-5xl">🪑</span>
               <p className="text-center font-semibold text-lg">{t.benchedThisDuel}</p>
-              <p className="text-center text-base-content/60 text-sm">{duelLabel}</p>
-            </div>
-          </div>
+              <p className="text-center text-(--muted) text-sm">{duelLabel}</p>
+            </Card.Content>
+          </Card>
         )}
 
-        {/* READY_CHECK – duel participant waiting */}
         {!isBenched && !isDueling && (
-          <div className="card w-full bg-base-100 shadow-xl">
-            <div className="card-body items-center gap-4 py-8">
-              <p className="text-sm text-base-content/60 uppercase tracking-widest">🥊</p>
+          <Card className="w-full">
+            <Card.Content className="flex flex-col items-center gap-4 py-8 px-4">
+              <p className="text-sm text-(--muted) uppercase tracking-widest">🥊</p>
               <p className="text-2xl font-bold text-center">{duelLabel}</p>
               {!isReady ? (
                 <>
-                  <p className="text-sm text-base-content/60 text-center">{t.tapToReady}</p>
-                  <button className="btn btn-primary btn-block mt-2" onClick={onToggleReady}>
-                    {t.ready}
-                  </button>
+                  <p className="text-sm text-(--muted) text-center">{t.tapToReady}</p>
+                  <Button variant="primary" fullWidth onPress={onToggleReady}>{t.ready}</Button>
                 </>
               ) : (
                 <div className="flex flex-col items-center gap-2">
-                  <span className="badge badge-success badge-lg">✓ {t.ready}</span>
-                  <p className="text-sm text-base-content/60">{t.waitingForOpponent}</p>
+                  <Chip size="lg" color="success" variant="soft">✓ {t.ready}</Chip>
+                  <p className="text-sm text-(--muted)">{t.waitingForOpponent}</p>
                 </div>
               )}
-            </div>
-          </div>
+            </Card.Content>
+          </Card>
         )}
 
-        {/* DUELING – game frame */}
         {!isBenched && isDueling && amDueler && arena.duel && (
-          <div className="card w-full bg-base-100 shadow-xl">
-            <div className="card-body">
+          <Card className="w-full">
+            <Card.Content className="p-4">
               <GameFrame
                 roomCode={roomCode}
                 matchId={arena.duel.matchId}
@@ -93,14 +85,13 @@ export default function ReadyCheck({
                 lang={lang}
                 durationMs={arena.gameMeta?.durationMs ?? 10000}
               />
-            </div>
-          </div>
+            </Card.Content>
+          </Card>
         )}
 
-        {/* Leaderboard snapshot */}
-        <div className="card w-full bg-base-100 shadow-xl">
-          <div className="card-body gap-2 py-4">
-            <h3 className="font-semibold text-base-content/60 uppercase text-xs tracking-widest">{t.players}</h3>
+        <Card className="w-full">
+          <Card.Content className="flex flex-col gap-2 py-4 px-4">
+            <h3 className="font-semibold text-(--muted) uppercase text-xs tracking-widest">{t.players}</h3>
             <ul className="flex flex-col gap-1">
               {[...room.players].sort((a, b) => b.score - a.score).map((p) => (
                 <li key={p.id} className="flex justify-between text-sm">
@@ -109,8 +100,8 @@ export default function ReadyCheck({
                 </li>
               ))}
             </ul>
-          </div>
-        </div>
+          </Card.Content>
+        </Card>
       </main>
     </>
   );

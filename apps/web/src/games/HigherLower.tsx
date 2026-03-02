@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { GameComponentProps } from "./types";
+import { Button, Chip, Input, Spinner } from "@heroui/react";
 
 type Hint = "higher" | "lower" | "correct";
 
@@ -20,9 +21,9 @@ interface PublicState {
 const HINT_ICON: Record<Hint, string> = { higher: "⬆️", lower: "⬇️", correct: "✅" };
 const HINT_LABEL: Record<Hint, string> = { higher: "Go higher", lower: "Go lower", correct: "Correct!" };
 const HINT_CLASS: Record<Hint, string> = {
-  higher: "text-warning",
-  lower: "text-info",
-  correct: "text-success font-bold",
+  higher: "text-(--warning)",
+  lower: "text-(--accent)",
+  correct: "text-(--success) font-bold",
 };
 
 export default function HigherLower({
@@ -34,24 +35,14 @@ export default function HigherLower({
 
   const iSubmitted = s.submitted[playerId] ?? false;
   const oppSubmitted = s.submitted[opponentId] ?? false;
-
   const lastHint = hints.length > 0 ? hints[hints.length - 1] : null;
 
-  // Finished state
   if (s.finished) {
     const iWon = s.winner === playerId;
     return (
       <div className="flex flex-col items-center gap-4 py-10">
-        <p className="text-5xl">
-          {s.isDraw ? "🤝" : iWon ? "🎉" : "😢"}
-        </p>
-        <p className="text-2xl font-bold">
-          {s.isDraw
-            ? "It's a draw!"
-            : iWon
-            ? "You guessed it!"
-            : "Opponent got it first!"}
-        </p>
+        <p className="text-5xl">{s.isDraw ? "🤝" : iWon ? "🎉" : "😢"}</p>
+        <p className="text-2xl font-bold">{s.isDraw ? "It's a draw!" : iWon ? "You guessed it!" : "Opponent got it first!"}</p>
       </div>
     );
   }
@@ -65,18 +56,16 @@ export default function HigherLower({
 
   return (
     <div className="flex flex-col items-center gap-4 py-4 w-full">
-      {/* Header */}
       <div className="flex items-center justify-between w-full px-2">
         <p className="text-base font-semibold">Round {s.round} — Guess 1–100</p>
-        <p className="badge badge-neutral tabular-nums">{Math.ceil(remainingMs / 1000)}s</p>
+        <Chip size="sm" color="default" variant="secondary">{Math.ceil(remainingMs / 1000)}s</Chip>
       </div>
 
-      {/* Own private hint history */}
       {hints.length > 0 && (
         <div className="w-full flex flex-col gap-1 max-h-40 overflow-y-auto">
           {hints.map((h, i) => (
             <div key={i} className={`flex items-center gap-2 text-sm ${HINT_CLASS[h.hint]}`}>
-              <span className="text-base-content/40 tabular-nums w-16 shrink-0">R{h.round}</span>
+              <span className="text-(--muted) tabular-nums w-16 shrink-0">R{h.round}</span>
               <span className="tabular-nums font-mono w-8 shrink-0">{h.guess}</span>
               <span>{HINT_ICON[h.hint]}</span>
               <span>{HINT_LABEL[h.hint]}</span>
@@ -85,13 +74,13 @@ export default function HigherLower({
         </div>
       )}
 
-      {/* Input / waiting */}
       {!iSubmitted ? (
-        <div className="join w-full max-w-xs">
-          <input
+        <div className="flex gap-2 w-full max-w-xs">
+          <Input
             type="tel"
             inputMode="numeric"
-            className="input input-bordered join-item flex-1 text-center text-2xl font-mono"
+            fullWidth
+            className="text-center text-2xl font-mono"
             value={input}
             autoFocus
             maxLength={3}
@@ -99,11 +88,7 @@ export default function HigherLower({
             onChange={(e) => setInput(e.target.value.replace(/\D/g, "").slice(0, 3))}
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
-          <button
-            className="btn btn-primary join-item text-xl"
-            disabled={!input}
-            onClick={submit}
-          >✓</button>
+          <Button variant="primary" isDisabled={!input} onPress={submit}>✓</Button>
         </div>
       ) : (
         <div className="flex flex-col items-center gap-2 py-2">
@@ -114,17 +99,16 @@ export default function HigherLower({
           )}
           {!oppSubmitted ? (
             <>
-              <span className="loading loading-dots loading-md" />
-              <p className="text-xs text-base-content/50">Waiting for opponent…</p>
+              <Spinner size="md" />
+              <p className="text-xs text-(--muted)">Waiting for opponent…</p>
             </>
           ) : (
-            <p className="badge badge-info text-xs">Both submitted — next round…</p>
+            <Chip size="sm" color="accent" variant="soft">Both submitted — next round…</Chip>
           )}
         </div>
       )}
 
-      {/* Footer */}
-      <div className="flex justify-between w-full px-2 text-xs text-base-content/40">
+      <div className="flex justify-between w-full px-2 text-xs text-(--muted)">
         <span>Your guesses: {hints.length}</span>
         <span>Opponent: {oppSubmitted ? "✓ submitted" : "thinking…"}</span>
       </div>

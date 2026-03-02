@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { T } from "../i18n";
+import { Button } from "@heroui/react";
 
 interface Props {
   t: T;
@@ -40,24 +41,16 @@ export default function IosInstallHint({ t }: Props) {
       aria-modal="true"
       className="fixed bottom-0 inset-x-0 z-50 px-4 pb-[calc(1rem+var(--sab))]"
     >
-      <div className="alert shadow-lg bg-base-100 border border-base-300 flex flex-col items-start gap-2 text-sm">
-        {/* iOS share icon hint */}
+      <div className="flex flex-col gap-2 p-4 rounded-xl bg-(--surface) border border-(--border) shadow-xl text-sm">
         <div className="flex items-center gap-2 w-full">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-5 w-5 shrink-0 text-primary"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0 text-(--accent)" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 12V4m0 0L8 8m4-4l4 4" />
           </svg>
           <span className="flex-1">{t.installHint}</span>
         </div>
-        <button className="btn btn-sm btn-ghost self-end" onClick={dismiss}>
+        <Button variant="ghost" size="sm" className="self-end" onPress={dismiss}>
           {t.installHintClose}
-        </button>
+        </Button>
       </div>
     </div>
   );

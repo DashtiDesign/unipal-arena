@@ -4,10 +4,11 @@ import { EVENTS } from "@arena/shared";
 import type { GameStatePayload, GamePrivatePayload } from "@arena/shared";
 import { GAME_REGISTRY } from "../games/index";
 import { Lang } from "../i18n";
+import { Spinner } from "@heroui/react";
 
 interface Props {
   roomCode: string;
-  matchId: string;   // unique per duel — used to reset state and ignore stale events
+  matchId: string;
   gameId: number;
   gameDefId: string;
   playerId: string;
@@ -25,8 +26,6 @@ export default function GameFrame({
   const [privateEvents, setPrivateEvents] = useState<unknown[]>([]);
   const publicStateRef = useRef<unknown>(null);
 
-  // Reset all local game state and request a snapshot whenever matchId changes.
-  // Watchdog: poll every 300ms (up to 10 times) until a matching GAME_STATE arrives.
   useEffect(() => {
     setPublicState(null);
     publicStateRef.current = null;
@@ -76,16 +75,14 @@ export default function GameFrame({
   const entry = GAME_REGISTRY.get(gameDefId);
   const GameComponent = entry?.component;
 
-  // stop_at_10s has its own built-in timer display — hide the generic bar
   const showProgressBar = gameDefId !== "stop_at_10s";
 
   return (
     <div className="w-full">
-      {/* Countdown bar — hidden for games that render their own timer */}
       {showProgressBar && (
-        <div className="w-full bg-base-300 rounded-full h-2 mb-4">
+        <div className="w-full bg-(--surface-secondary) rounded-full h-2 mb-4">
           <div
-            className="bg-primary h-2 rounded-full transition-all"
+            className="bg-(--accent) h-2 rounded-full transition-all"
             style={{ width: `${Math.min(100, (remainingMs / durationMs) * 100)}%` }}
           />
         </div>
@@ -102,8 +99,8 @@ export default function GameFrame({
           privateState={privateEvents}
         />
       ) : (
-        <div className="flex flex-col items-center gap-3 py-12 text-base-content/50">
-          <span className="loading loading-spinner loading-lg" />
+        <div className="flex flex-col items-center gap-3 py-12 text-(--muted)">
+          <Spinner size="lg" />
           <span className="text-sm">Syncing…</span>
         </div>
       )}

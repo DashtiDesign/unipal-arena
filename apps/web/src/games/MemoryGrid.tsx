@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { GameComponentProps } from "./types";
+import { Spinner } from "@heroui/react";
 
 interface PlayerResult {
   correct: boolean;
@@ -7,8 +8,8 @@ interface PlayerResult {
 }
 
 interface State {
-  targets: number[] | null;  // non-null during reveal phase
-  showUntil: number;         // epoch ms
+  targets: number[] | null;
+  showUntil: number;
   tappedCount: Record<string, number>;
   results: Record<string, PlayerResult> | null;
   numCells: number;
@@ -21,7 +22,6 @@ export default function MemoryGrid({
   const [now, setNow] = useState(Date.now);
   const [tapped, setTapped] = useState<number[]>([]);
 
-  // Tick every 100ms to transition reveal → recall without a server round-trip
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 100);
     return () => clearInterval(id);
@@ -31,7 +31,6 @@ export default function MemoryGrid({
   const iDone = tapped.length >= s.numCells;
   const oppDone = (s.tappedCount[opponentId] ?? 0) >= s.numCells;
 
-  // Both done — show results
   if (s.results) {
     const mine = s.results[playerId];
     const theirs = s.results[opponentId];
@@ -45,17 +44,14 @@ export default function MemoryGrid({
           {isDraw ? "Draw!" : iWon ? "You remembered!" : mine?.correct ? "Too slow!" : "Wrong selection!"}
         </p>
         <div className="w-full flex flex-col gap-2 max-w-xs">
-          {[
-            { label: "You", result: mine },
-            { label: "Opponent", result: theirs },
-          ].map(({ label, result }) => (
-            <div key={label} className="flex items-center justify-between p-3 bg-base-200 rounded-xl">
+          {[{ label: "You", result: mine }, { label: "Opponent", result: theirs }].map(({ label, result }) => (
+            <div key={label} className="flex items-center justify-between p-3 bg-(--surface-secondary) rounded-xl">
               <span className="text-sm font-semibold">{label}</span>
               <div className="text-right">
-                <p className={`font-bold text-sm ${result?.correct ? "text-success" : "text-error"}`}>
+                <p className={`font-bold text-sm ${result?.correct ? "text-(--success)" : "text-(--danger)"}`}>
                   {result?.correct ? "✓ Correct" : "✗ Wrong"}
                 </p>
-                <p className="text-xs text-base-content/50 tabular-nums">
+                <p className="text-xs text-(--muted) tabular-nums">
                   {result?.correct ? `${(result.elapsedMs / 1000).toFixed(2)}s` : "—"}
                 </p>
               </div>
@@ -76,27 +72,24 @@ export default function MemoryGrid({
 
   function cellClass(i: number): string {
     if (revealing) {
-      return s.targets?.includes(i)
-        ? "bg-warning scale-105 shadow-lg"
-        : "bg-base-300";
+      return s.targets?.includes(i) ? "bg-(--warning) scale-105 shadow-lg" : "bg-(--surface-secondary)";
     }
-    if (tapped.includes(i)) return "bg-primary text-primary-content";
-    if (iDone) return "bg-base-200 opacity-40 cursor-not-allowed";
-    return "bg-base-200 hover:bg-base-300 active:scale-90";
+    if (tapped.includes(i)) return "bg-(--accent) text-(--accent-foreground)";
+    if (iDone) return "bg-(--surface-secondary) opacity-40 cursor-not-allowed";
+    return "bg-(--surface-secondary) hover:bg-(--surface-tertiary) active:scale-90";
   }
 
   const revealSecondsLeft = Math.max(0, Math.ceil((s.showUntil - now) / 1000));
 
-  // After tapping all 5, show waiting state
   if (iDone) {
     return (
       <div className="flex flex-col items-center gap-4 py-10 w-full">
-        <p className="text-success text-lg font-bold">✓ Done!</p>
+        <p className="text-(--success) text-lg font-bold">✓ Done!</p>
         <div className="flex flex-col items-center gap-1 mt-2">
-          <span className="loading loading-dots loading-md" />
-          <p className="text-xs text-base-content/50">Waiting for opponent…</p>
+          <Spinner size="md" />
+          <p className="text-xs text-(--muted)">Waiting for opponent…</p>
         </div>
-        <p className="badge badge-neutral tabular-nums">{Math.ceil(remainingMs / 1000)}s</p>
+        <span className="text-sm text-(--muted) tabular-nums">{Math.ceil(remainingMs / 1000)}s</span>
       </div>
     );
   }
@@ -104,12 +97,10 @@ export default function MemoryGrid({
   return (
     <div className="flex flex-col items-center gap-4 py-4 w-full select-none">
       <div className="flex items-center justify-between w-full px-2">
-        <p className="text-sm font-semibold text-base-content/70">
-          {revealing
-            ? `Memorize! (${revealSecondsLeft}s)`
-            : `Tap the ${s.numCells} cells you saw`}
+        <p className="text-sm font-semibold text-(--foreground)">
+          {revealing ? `Memorize! (${revealSecondsLeft}s)` : `Tap the ${s.numCells} cells you saw`}
         </p>
-        <p className="badge badge-neutral tabular-nums">{Math.ceil(remainingMs / 1000)}s</p>
+        <span className="text-sm text-(--muted) tabular-nums">{Math.ceil(remainingMs / 1000)}s</span>
       </div>
 
       <div className="grid grid-cols-4 gap-2 w-full max-w-xs">
@@ -125,17 +116,8 @@ export default function MemoryGrid({
         ))}
       </div>
 
-      {/* Progress */}
-      {!revealing && (
-        <p className="text-xs text-base-content/40">
-          {tapped.length}/{s.numCells} tapped
-        </p>
-      )}
-
-      {/* Opponent status */}
-      {oppDone && (
-        <p className="text-xs text-base-content/40">Opponent finished!</p>
-      )}
+      {!revealing && <p className="text-xs text-(--muted)">{tapped.length}/{s.numCells} tapped</p>}
+      {oppDone && <p className="text-xs text-(--muted)">Opponent finished!</p>}
     </div>
   );
 }

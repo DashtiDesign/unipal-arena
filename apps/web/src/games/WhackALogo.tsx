@@ -1,6 +1,6 @@
 import { GameComponentProps } from "./types";
+import { Chip } from "@heroui/react";
 
-// Same constants as server so positions align
 const AREA_W = 320;
 const AREA_H = 340;
 const LOGO_SIZE = 80;
@@ -31,25 +31,22 @@ export default function WhackALogo({ publicState, playerId, opponentId, onInput,
 
   return (
     <div className="flex flex-col items-center gap-3 py-4 w-full select-none">
-      {/* Scoreboard */}
       <div className="flex justify-around w-full">
         <div className="flex flex-col items-center">
-          <span className="text-xs text-base-content/60 uppercase">You</span>
-          <span className="text-4xl font-bold tabular-nums text-primary">{myHits}</span>
+          <span className="text-xs text-(--muted) uppercase">You</span>
+          <span className="text-4xl font-bold tabular-nums text-(--accent)">{myHits}</span>
         </div>
-        <p className="badge badge-neutral tabular-nums self-center">{Math.ceil(remainingMs / 1000)}s</p>
+        <Chip size="sm" color="default" variant="secondary" className="self-center">{Math.ceil(remainingMs / 1000)}s</Chip>
         <div className="flex flex-col items-center">
-          <span className="text-xs text-base-content/60 uppercase">Opponent</span>
-          <span className="text-4xl font-bold tabular-nums text-secondary">{oppHits}</span>
+          <span className="text-xs text-(--muted) uppercase">Opponent</span>
+          <span className="text-4xl font-bold tabular-nums text-(--success)">{oppHits}</span>
         </div>
       </div>
 
-      {/* Play area — fixed size matching server constants */}
       <div
-        className="relative bg-base-200 rounded-2xl overflow-hidden border border-base-300"
+        className="relative bg-(--surface-secondary) rounded-2xl overflow-hidden border border-(--border)"
         style={{ width: AREA_W, height: AREA_H, touchAction: "none" }}
       >
-        {/* Logo — always present */}
         {mySlot?.logo && (
           <button
             key={mySlot.logo.id}
@@ -61,16 +58,15 @@ export default function WhackALogo({ publicState, playerId, opponentId, onInput,
           </button>
         )}
 
-        {/* Bomb — optional, independent tap target */}
         {mySlot?.bomb && (
           <button
             key={mySlot.bomb.id}
             className="absolute p-0 border-none bg-transparent active:scale-110 transition-transform duration-75"
             style={{ left: mySlot.bomb.x, top: mySlot.bomb.y, width: LOGO_SIZE, height: LOGO_SIZE, touchAction: "none" }}
-            onPointerDown={(e) => { e.preventDefault(); onInput({ targetId: mySlot.bomb.id }); }}
+            onPointerDown={(e) => { e.preventDefault(); onInput({ targetId: mySlot.bomb!.id }); }}
           >
             <div
-              className="w-full h-full flex items-center justify-center rounded-full bg-error/20 border-2 border-error animate-pulse"
+              className="w-full h-full flex items-center justify-center rounded-full bg-(--danger)/20 border-2 border-(--danger) animate-pulse"
               style={{ fontSize: LOGO_SIZE * 0.6 }}
             >
               💣
@@ -79,7 +75,7 @@ export default function WhackALogo({ publicState, playerId, opponentId, onInput,
         )}
       </div>
 
-      <p className="text-xs text-base-content/40">
+      <p className="text-xs text-(--muted)">
         {mySlot?.bomb
           ? "Tap 💣 (−2 pts) or tap the logo to clear both!"
           : "Tap the logo (+1 pt) — avoid the 💣 bomb!"}

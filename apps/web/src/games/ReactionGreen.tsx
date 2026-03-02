@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { GameComponentProps } from "./types";
 
 interface State {
-  triggerAt: number;                 // absolute epoch ms
-  reacted: Record<string, boolean>;  // has tapped (early or valid)
-  earlyTap: Record<string, boolean>; // tapped before green
+  triggerAt: number;
+  reacted: Record<string, boolean>;
+  earlyTap: Record<string, boolean>;
 }
 
 export default function ReactionGreen({ publicState, playerId, opponentId, onInput }: GameComponentProps) {
@@ -31,19 +31,19 @@ export default function ReactionGreen({ publicState, playerId, opponentId, onInp
   }
 
   let label: string;
-  let colorClass: string;
+  let bgClass: string;
   if (IWasEarly) {
     label = "❌ Too Early!";
-    colorClass = "bg-error text-error-content cursor-not-allowed";
+    bgClass = "bg-(--danger) text-(--danger-foreground) cursor-not-allowed";
   } else if (IReacted) {
     label = "✓ Tapped!";
-    colorClass = "bg-success text-success-content cursor-not-allowed";
+    bgClass = "bg-(--success) text-(--success-foreground) cursor-not-allowed";
   } else if (isGreen) {
     label = "TAP NOW!";
-    colorClass = "bg-success text-success-content";
+    bgClass = "bg-(--success) text-(--success-foreground)";
   } else {
     label = "Wait…";
-    colorClass = "bg-error text-error-content";
+    bgClass = "bg-(--danger) text-(--danger-foreground)";
   }
 
   let statusMsg = "";
@@ -60,16 +60,14 @@ export default function ReactionGreen({ publicState, playerId, opponentId, onInp
       <p className="text-base font-semibold text-center min-h-[1.5rem]">{statusMsg}</p>
 
       <button
-        className={`w-full rounded-2xl flex items-center justify-center text-5xl font-bold transition-all active:scale-95 ${colorClass}`}
+        className={`w-full rounded-2xl flex items-center justify-center text-5xl font-bold transition-all active:scale-95 ${bgClass}`}
         style={{ height: "260px", touchAction: "none" }}
         onPointerDown={handleTap}
       >
         {label}
       </button>
 
-      {oppStatus && (
-        <p className="text-xs text-base-content/50 text-center">{oppStatus}</p>
-      )}
+      {oppStatus && <p className="text-xs text-(--muted) text-center">{oppStatus}</p>}
     </div>
   );
 }

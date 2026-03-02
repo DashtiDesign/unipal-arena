@@ -36,9 +36,8 @@ export default function App() {
 
   return (
     <div
-      data-theme="light"
       dir={lang === "ar" ? "rtl" : "ltr"}
-      className="min-h-screen bg-base-200"
+      className="min-h-screen bg-(--background)"
     >
       {screen === "home" && (
         <Home

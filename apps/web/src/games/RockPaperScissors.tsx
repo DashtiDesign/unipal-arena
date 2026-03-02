@@ -1,4 +1,5 @@
 import { GameComponentProps } from "./types";
+import { Button, Chip, Spinner } from "@heroui/react";
 
 type Choice = "rock" | "paper" | "scissors";
 
@@ -34,7 +35,6 @@ export default function RockPaperScissors({
   const myChoice = s.choices?.[playerId];
   const oppChoice = s.choices?.[opponentId];
 
-  // ── Finished: final result ─────────────────────────────────────────────────
   if (s.finished && s.choices) {
     const mine = s.choices[playerId] as Choice | undefined;
     const theirs = s.choices[opponentId] as Choice | undefined;
@@ -43,34 +43,30 @@ export default function RockPaperScissors({
     let resultClass = "";
     if (!mine) {
       resultLabel = "You didn't pick — you lose!";
-      resultClass = "text-error";
+      resultClass = "text-(--danger)";
     } else if (!theirs) {
       resultLabel = "Opponent didn't pick — you win!";
-      resultClass = "text-success";
+      resultClass = "text-(--success)";
     } else if (beats[mine] === theirs) {
       resultLabel = "You win!";
-      resultClass = "text-success";
+      resultClass = "text-(--success)";
     } else {
       resultLabel = "You lose!";
-      resultClass = "text-error";
+      resultClass = "text-(--danger)";
     }
 
     return (
       <div className="flex flex-col items-center gap-6 py-8 w-full">
-        {s.subRound > 1 && (
-          <p className="text-xs text-base-content/40 uppercase tracking-widest">
-            After {s.subRound} sub-rounds
-          </p>
-        )}
+        {s.subRound > 1 && <p className="text-xs text-(--muted) uppercase tracking-widest">After {s.subRound} sub-rounds</p>}
         <div className="flex gap-8 items-center">
           <div className="flex flex-col items-center gap-1">
             <span className="text-6xl">{emoji(mine)}</span>
-            <span className="text-xs text-base-content/50">You</span>
+            <span className="text-xs text-(--muted)">You</span>
           </div>
-          <span className="text-2xl text-base-content/30">vs</span>
+          <span className="text-2xl text-(--muted)">vs</span>
           <div className="flex flex-col items-center gap-1">
             <span className="text-6xl">{emoji(theirs)}</span>
-            <span className="text-xs text-base-content/50">Opponent</span>
+            <span className="text-xs text-(--muted)">Opponent</span>
           </div>
         </div>
         <p className={`text-2xl font-bold ${resultClass}`}>{resultLabel}</p>
@@ -78,37 +74,33 @@ export default function RockPaperScissors({
     );
   }
 
-  // ── Tie sub-round reveal: lastChoices set, not finished ────────────────────
-  // Show the tied result AND re-enable choice buttons for the next sub-round.
   if (s.lastChoices && !s.finished) {
     const mine = s.lastChoices[playerId] as Choice | undefined;
     const theirs = s.lastChoices[opponentId] as Choice | undefined;
     return (
       <div className="flex flex-col items-center gap-4 py-4 w-full select-none">
         <div className="flex items-center justify-between w-full px-2">
-          <p className="text-xs text-base-content/40 uppercase tracking-widest">
-            Sub-round {s.subRound - 1} — Tie!
-          </p>
-          <p className="badge badge-neutral tabular-nums">{Math.ceil(remainingMs / 1000)}s</p>
+          <p className="text-xs text-(--muted) uppercase tracking-widest">Sub-round {s.subRound - 1} — Tie!</p>
+          <Chip size="sm" color="default" variant="secondary">{Math.ceil(remainingMs / 1000)}s</Chip>
         </div>
         <div className="flex gap-8 items-center">
           <div className="flex flex-col items-center gap-1">
             <span className="text-5xl">{emoji(mine)}</span>
-            <span className="text-xs text-base-content/50">You</span>
+            <span className="text-xs text-(--muted)">You</span>
           </div>
-          <span className="text-xl text-base-content/30">vs</span>
+          <span className="text-xl text-(--muted)">vs</span>
           <div className="flex flex-col items-center gap-1">
             <span className="text-5xl">{emoji(theirs)}</span>
-            <span className="text-xs text-base-content/50">Opponent</span>
+            <span className="text-xs text-(--muted)">Opponent</span>
           </div>
         </div>
-        <p className="badge badge-warning badge-lg">🔁 Sub-round {s.subRound} — pick again!</p>
+        <Chip size="lg" color="warning" variant="soft">🔁 Sub-round {s.subRound} — pick again!</Chip>
         {!iChose ? (
           <div className="flex gap-3 w-full justify-center">
             {OPTIONS.map(({ v, label, e }) => (
               <button
                 key={v}
-                className="flex flex-col items-center gap-1 btn btn-outline h-auto py-4 px-5 active:scale-95 transition-transform"
+                className="flex flex-col items-center gap-1 border border-(--border) rounded-xl py-4 px-5 active:scale-95 transition-transform bg-(--surface) hover:bg-(--surface-secondary)"
                 onPointerDown={(ev) => { ev.preventDefault(); onInput({ choice: v }); }}
               >
                 <span className="text-5xl">{e}</span>
@@ -118,30 +110,27 @@ export default function RockPaperScissors({
           </div>
         ) : (
           <div className="flex flex-col items-center gap-1 mt-2">
-            <span className="loading loading-dots loading-md" />
-            <p className="text-xs text-base-content/50">Waiting for opponent…</p>
+            <Spinner size="md" />
+            <p className="text-xs text-(--muted)">Waiting for opponent…</p>
           </div>
         )}
       </div>
     );
   }
 
-  // ── Choosing ───────────────────────────────────────────────────────────────
   if (!iChose) {
     return (
       <div className="flex flex-col items-center gap-6 py-6 w-full select-none">
         <div className="flex items-center justify-between w-full px-2">
-          {s.subRound > 1 && (
-            <p className="text-xs text-base-content/50">Sub-round {s.subRound}</p>
-          )}
-          <p className="badge badge-neutral tabular-nums ml-auto">{Math.ceil(remainingMs / 1000)}s</p>
+          {s.subRound > 1 && <p className="text-xs text-(--muted)">Sub-round {s.subRound}</p>}
+          <Chip size="sm" color="default" variant="secondary" className="ml-auto">{Math.ceil(remainingMs / 1000)}s</Chip>
         </div>
-        <p className="text-sm text-base-content/60">Choose your move</p>
+        <p className="text-sm text-(--muted)">Choose your move</p>
         <div className="flex gap-3 w-full justify-center">
           {OPTIONS.map(({ v, label, e }) => (
             <button
               key={v}
-              className="flex flex-col items-center gap-1 btn btn-outline h-auto py-4 px-5 active:scale-95 transition-transform"
+              className="flex flex-col items-center gap-1 border border-(--border) rounded-xl py-4 px-5 active:scale-95 transition-transform bg-(--surface) hover:bg-(--surface-secondary)"
               onPointerDown={(ev) => { ev.preventDefault(); onInput({ choice: v }); }}
             >
               <span className="text-5xl">{e}</span>
@@ -153,25 +142,20 @@ export default function RockPaperScissors({
     );
   }
 
-  // ── Waiting for opponent ───────────────────────────────────────────────────
   return (
     <div className="flex flex-col items-center gap-6 py-8 w-full">
-      {s.subRound > 1 && (
-        <p className="text-xs text-base-content/40 uppercase tracking-widest">
-          Sub-round {s.subRound}
-        </p>
-      )}
-      <p className="badge badge-neutral tabular-nums">{Math.ceil(remainingMs / 1000)}s</p>
+      {s.subRound > 1 && <p className="text-xs text-(--muted) uppercase tracking-widest">Sub-round {s.subRound}</p>}
+      <Chip size="sm" color="default" variant="secondary">{Math.ceil(remainingMs / 1000)}s</Chip>
       <div className="flex flex-col items-center gap-3">
-        <p className="text-sm text-base-content/60">You chose</p>
+        <p className="text-sm text-(--muted)">You chose</p>
         <span className="text-7xl">{emoji(myChoice)}</span>
         {!oppChose ? (
           <div className="flex flex-col items-center gap-1 mt-2">
-            <span className="loading loading-dots loading-md" />
-            <p className="text-xs text-base-content/50">Waiting for opponent…</p>
+            <Spinner size="md" />
+            <p className="text-xs text-(--muted)">Waiting for opponent…</p>
           </div>
         ) : (
-          <p className="badge badge-success text-sm">Both chosen — revealing…</p>
+          <Chip size="sm" color="success" variant="soft">Both chosen — revealing…</Chip>
         )}
       </div>
     </div>

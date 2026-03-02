@@ -1,5 +1,6 @@
 import { T, Lang } from "../../i18n";
 import type { Room, ArenaState } from "@arena/shared";
+import { Button, Card } from "@heroui/react";
 import GameFrame from "../../components/GameFrame";
 
 interface Props {
@@ -19,9 +20,7 @@ export default function InGame({
   const duel = arena.duel;
   const isBenched = arena.benchedId === playerId;
   const amDueler = duel ? (playerId === duel.aId || playerId === duel.bId) : false;
-  const opponentId = duel
-    ? (playerId === duel.aId ? duel.bId : duel.aId)
-    : "";
+  const opponentId = duel ? (playerId === duel.aId ? duel.bId : duel.aId) : "";
 
   const playerA = duel ? room.players.find((p) => p.id === duel.aId) : null;
   const playerB = duel ? room.players.find((p) => p.id === duel.bId) : null;
@@ -35,29 +34,29 @@ export default function InGame({
 
   return (
     <>
-      <div className="navbar bg-base-100 shadow-sm px-4">
-        <div className="flex-1 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 bg-(--surface) border-b border-(--border) shadow-sm">
+        <div className="flex flex-col">
           <span className="text-base font-bold leading-tight">{gameName || t.appName}</span>
-          <span className="text-xs text-base-content/50">{duelLabel}</span>
+          <span className="text-xs text-(--muted)">{duelLabel}</span>
         </div>
-        <div className="flex-none gap-1">
-          <button className="btn btn-ghost btn-sm" onClick={onLangToggle}>{t.lang}</button>
-          <button className="btn btn-ghost btn-sm text-error" onClick={onLeave}>✕</button>
+        <div className="flex gap-1">
+          <Button variant="ghost" size="sm" onPress={onLangToggle}>{t.lang}</Button>
+          <Button variant="ghost" size="sm" className="text-(--danger)" onPress={onLeave}>✕</Button>
         </div>
       </div>
 
       <main className="flex flex-col items-center px-4 py-4 max-w-sm mx-auto w-full">
         {isBenched ? (
-          <div className="card w-full bg-base-100 shadow-xl mt-4">
-            <div className="card-body items-center gap-4 py-10">
+          <Card className="w-full mt-4">
+            <Card.Content className="flex flex-col items-center gap-4 py-10 px-4">
               <span className="text-5xl">🪑</span>
               <p className="text-center font-semibold text-lg">{t.benchedThisDuel}</p>
-              <p className="text-center text-base-content/60 text-sm">{duelLabel}</p>
-            </div>
-          </div>
+              <p className="text-center text-(--muted) text-sm">{duelLabel}</p>
+            </Card.Content>
+          </Card>
         ) : amDueler && duel ? (
-          <div className="card w-full bg-base-100 shadow-xl">
-            <div className="card-body p-3">
+          <Card className="w-full">
+            <Card.Content className="p-3">
               <GameFrame
                 roomCode={roomCode}
                 matchId={duel.matchId}
@@ -68,8 +67,8 @@ export default function InGame({
                 lang={lang}
                 durationMs={arena.gameMeta?.durationMs ?? 10000}
               />
-            </div>
-          </div>
+            </Card.Content>
+          </Card>
         ) : null}
       </main>
     </>
