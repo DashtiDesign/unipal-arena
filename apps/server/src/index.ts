@@ -32,7 +32,8 @@ app.use(express.json());
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 if (process.env.NODE_ENV === "production") {
-  const distPath = path.resolve(process.cwd(), "apps/web/dist");
+  const distPath = path.resolve(__dirname, "../../web/dist");
+  console.log("[static] serving web from", distPath);
   app.use(express.static(distPath));
   app.get("*", (_req, res) => res.sendFile(path.join(distPath, "index.html")));
 }
