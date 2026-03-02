@@ -5,7 +5,6 @@ import { Button, Card, Chip } from "@heroui/react";
 interface Props {
   t: T;
   lang: Lang;
-  onLangToggle: () => void;
   room: Room;
   arena: ArenaState;
   playerId: string;
@@ -15,7 +14,7 @@ interface Props {
 }
 
 export default function PreRound({
-  t, lang, onLangToggle, room, arena, playerId, isReady, onToggleReady, onLeave,
+  t, lang, room, arena, playerId, isReady, onToggleReady, onLeave,
 }: Props) {
   const meta = arena.gameMeta;
   const duel = arena.duel;
@@ -32,16 +31,7 @@ export default function PreRound({
   const gameName  = meta ? (lang === "ar" ? meta.displayName.ar : meta.displayName.en) : "";
 
   return (
-    <>
-      <div className="flex items-center justify-between px-4 py-3 bg-(--surface) border-b border-(--border) shadow-sm">
-        <span className="text-xl font-bold tracking-tight">{t.appName}</span>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onPress={onLangToggle}>{t.lang}</Button>
-          <Button variant="ghost" size="sm" className="text-(--danger)" onPress={onLeave}>✕</Button>
-        </div>
-      </div>
-
-      <main className="flex flex-col items-center px-4 py-6 gap-4 max-w-sm mx-auto">
+    <main className="flex flex-col items-center px-4 py-6 gap-4 max-w-sm mx-auto">
         <Card className="w-full">
           <Card.Content className="flex flex-col items-center gap-2 py-5 px-4">
             <p className="text-xs text-(--muted) uppercase tracking-widest">🥊 Next Duel</p>
@@ -88,7 +78,6 @@ export default function PreRound({
             </ul>
           </Card.Content>
         </Card>
-      </main>
-    </>
+    </main>
   );
 }

@@ -1,13 +1,17 @@
 @import "@heroui/styles";
 
-/* Brand primary = #001a9c — override accent in both themes */
+/* Brand primary — light: #001a9c, dark: #62B1E9 */
 :root,
 .light,
-[data-theme="light"],
-.dark,
-[data-theme="dark"] {
+[data-theme="light"] {
   --accent: oklch(26.7% 0.257 264.1);         /* #001a9c */
   --accent-foreground: oklch(100% 0 0);        /* white */
+}
+
+.dark,
+[data-theme="dark"] {
+  --accent: oklch(74.5% 0.112 224.6);         /* #62B1E9 */
+  --accent-foreground: oklch(15% 0.02 224.6); /* near-black on light blue */
 }
 
 /* Safe-area insets for iOS notch / home bar */

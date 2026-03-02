@@ -13,13 +13,12 @@ import WinnerScreen from "./arena/WinnerScreen";
 interface Props {
   t: T;
   lang: Lang;
-  onLangToggle: () => void;
   session: Session;
   onSessionUpdate: (room: Room, arena: ArenaState) => void;
   onLeave: () => void;
 }
 
-export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate, onLeave }: Props) {
+export default function Lobby({ t, lang, session, onSessionUpdate, onLeave }: Props) {
   const { roomCode, playerId, room, arena } = session;
 
   useEffect(() => {
@@ -60,7 +59,6 @@ export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate,
       <PreRound
         t={t}
         lang={lang}
-        onLangToggle={onLangToggle}
         room={room}
         arena={arena}
         playerId={playerId}
@@ -76,7 +74,6 @@ export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate,
       <InGame
         t={t}
         lang={lang}
-        onLangToggle={onLangToggle}
         room={room}
         arena={arena}
         playerId={playerId}
@@ -90,7 +87,6 @@ export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate,
     return (
       <DuelResult
         t={t}
-        onLangToggle={onLangToggle}
         playerId={playerId}
         result={arena.lastResult}
         gameResult={arena.lastGameResult}
@@ -105,7 +101,6 @@ export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate,
     return (
       <WinnerScreen
         t={t}
-        onLangToggle={onLangToggle}
         playerId={playerId}
         leaderboard={lb}
         onPlayAgain={handlePlayAgain}
@@ -117,16 +112,7 @@ export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate,
   const allReady = room.players.length >= 2 && room.players.every((p) => p.isReady);
 
   return (
-    <>
-      <div className="flex items-center justify-between px-4 py-3 bg-(--surface) border-b border-(--border) shadow-sm">
-        <span className="text-xl font-bold tracking-tight">{t.appName}</span>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onPress={onLangToggle}>{t.lang}</Button>
-          <Button variant="ghost" size="sm" className="text-(--danger)" onPress={handleLeave}>✕</Button>
-        </div>
-      </div>
-
-      <main className="flex flex-col items-center px-4 py-8 gap-6 max-w-sm mx-auto">
+    <main className="flex flex-col items-center px-4 py-8 gap-6 max-w-sm mx-auto">
         <Card className="w-full">
           <Card.Content className="flex flex-col items-center gap-2 py-6 px-4">
             <p className="text-sm text-(--muted) uppercase tracking-widest">{t.roomCode}</p>
@@ -189,7 +175,6 @@ export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate,
             {isReady ? `✓ ${t.ready}` : t.ready}
           </Button>
         )}
-      </main>
-    </>
+    </main>
   );
 }

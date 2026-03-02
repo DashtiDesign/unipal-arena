@@ -1,6 +1,6 @@
 import { T } from "../../i18n";
 import type { LeaderboardEntry, Room, GameResultPayload } from "@arena/shared";
-import { Button, Card, Chip } from "@heroui/react";
+import { Card, Chip } from "@heroui/react";
 
 interface ResultData {
   winnerId: string | null;
@@ -11,7 +11,6 @@ interface ResultData {
 
 interface Props {
   t: T;
-  onLangToggle: () => void;
   playerId: string;
   result: ResultData;
   gameResult: GameResultPayload | null;
@@ -200,7 +199,7 @@ function buildBreakdown(
   }
 }
 
-export default function DuelResult({ t, onLangToggle, playerId, result, gameResult, room, onLeave }: Props) {
+export default function DuelResult({ t, playerId, result, gameResult, room, onLeave }: Props) {
   const { winnerId, isDraw, deltaScores, leaderboard } = result;
   const opponentId = leaderboard.find((e) => e.id !== playerId)?.id ?? "";
   const headline = isDraw ? t.itsDraw : winnerId === playerId ? t.youWon : t.youLost;
@@ -212,16 +211,7 @@ export default function DuelResult({ t, onLangToggle, playerId, result, gameResu
     : null;
 
   return (
-    <>
-      <div className="flex items-center justify-between px-4 py-3 bg-(--surface) border-b border-(--border) shadow-sm">
-        <span className="text-xl font-bold tracking-tight">{t.appName}</span>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onPress={onLangToggle}>{t.lang}</Button>
-          <Button variant="ghost" size="sm" className="text-(--danger)" onPress={onLeave}>✕</Button>
-        </div>
-      </div>
-
-      <main className="flex flex-col items-center px-4 py-8 gap-4 max-w-sm mx-auto">
+    <main className="flex flex-col items-center px-4 py-8 gap-4 max-w-sm mx-auto">
         <Card className="w-full">
           <Card.Content className="flex flex-col items-center gap-2 py-8 px-4">
             <p className="text-5xl">{isDraw ? "🤝" : winnerId === playerId ? "🏆" : "😢"}</p>
@@ -278,7 +268,6 @@ export default function DuelResult({ t, onLangToggle, playerId, result, gameResu
         </Card>
 
         <p className="text-xs text-(--muted)">{t.nextDuelIn}</p>
-      </main>
-    </>
+    </main>
   );
 }

@@ -1,12 +1,11 @@
 import { T, Lang } from "../../i18n";
 import type { Room, ArenaState } from "@arena/shared";
-import { Button, Card } from "@heroui/react";
+import { Card } from "@heroui/react";
 import GameFrame from "../../components/GameFrame";
 
 interface Props {
   t: T;
   lang: Lang;
-  onLangToggle: () => void;
   room: Room;
   arena: ArenaState;
   playerId: string;
@@ -15,7 +14,7 @@ interface Props {
 }
 
 export default function InGame({
-  t, lang, onLangToggle, room, arena, playerId, roomCode, onLeave,
+  t, lang, room, arena, playerId, roomCode, onLeave,
 }: Props) {
   const duel = arena.duel;
   const isBenched = arena.benchedId === playerId;
@@ -33,19 +32,7 @@ export default function InGame({
     : "";
 
   return (
-    <>
-      <div className="flex items-center justify-between px-4 py-3 bg-(--surface) border-b border-(--border) shadow-sm">
-        <div className="flex flex-col">
-          <span className="text-base font-bold leading-tight">{gameName || t.appName}</span>
-          <span className="text-xs text-(--muted)">{duelLabel}</span>
-        </div>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onPress={onLangToggle}>{t.lang}</Button>
-          <Button variant="ghost" size="sm" className="text-(--danger)" onPress={onLeave}>✕</Button>
-        </div>
-      </div>
-
-      <main className="flex flex-col items-center px-4 py-4 max-w-sm mx-auto w-full">
+    <main className="flex flex-col items-center px-4 py-4 max-w-sm mx-auto w-full">
         {isBenched ? (
           <Card className="w-full mt-4">
             <Card.Content className="flex flex-col items-center gap-4 py-10 px-4">
@@ -70,7 +57,6 @@ export default function InGame({
             </Card.Content>
           </Card>
         ) : null}
-      </main>
-    </>
+    </main>
   );
 }

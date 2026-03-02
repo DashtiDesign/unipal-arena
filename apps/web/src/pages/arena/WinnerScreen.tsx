@@ -4,29 +4,19 @@ import { Button, Card } from "@heroui/react";
 
 interface Props {
   t: T;
-  onLangToggle: () => void;
   playerId: string;
   leaderboard: LeaderboardEntry[];
   onPlayAgain: () => void;
   onLeave: () => void;
 }
 
-export default function WinnerScreen({ t, onLangToggle, playerId, leaderboard, onPlayAgain, onLeave }: Props) {
+export default function WinnerScreen({ t, playerId, leaderboard, onPlayAgain, onLeave }: Props) {
   const champion = leaderboard[0];
   const isChampion = champion?.id === playerId;
   const myPosition = leaderboard.findIndex((e) => e.id === playerId) + 1;
 
   return (
-    <>
-      <div className="flex items-center justify-between px-4 py-3 bg-(--surface) border-b border-(--border) shadow-sm">
-        <span className="text-xl font-bold tracking-tight">{t.appName}</span>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onPress={onLangToggle}>{t.lang}</Button>
-          <Button variant="ghost" size="sm" className="text-(--danger)" onPress={onLeave}>✕</Button>
-        </div>
-      </div>
-
-      <main className="flex flex-col items-center justify-center px-4 py-12 gap-6 max-w-sm mx-auto min-h-[70vh]">
+    <main className="flex flex-col items-center justify-center px-4 py-12 gap-6 max-w-sm mx-auto min-h-[70vh]">
         <Card className="w-full">
           <Card.Content className="flex flex-col items-center gap-4 py-10 px-4">
             <span className="text-6xl">{isChampion ? "🥇" : myPosition === 2 ? "🥈" : myPosition === 3 ? "🥉" : "🏁"}</span>
@@ -59,7 +49,6 @@ export default function WinnerScreen({ t, onLangToggle, playerId, leaderboard, o
         </Card>
 
         <Button variant="primary" fullWidth onPress={onPlayAgain}>{t.playAgain}</Button>
-      </main>
-    </>
+    </main>
   );
 }

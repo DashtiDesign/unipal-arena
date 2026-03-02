@@ -22,7 +22,7 @@ import { REGISTRY, nextFromDeck, freshDeck } from "./games/registry";
 const PORT = process.env.PORT ?? 3001;
 const MAX_PLAYERS = 12;
 const WIN_SCORE = 10;
-const RESULT_DELAY_MS = 12000;
+const RESULT_DELAY_MS = 10000;
 
 const app = express();
 app.use(cors());
