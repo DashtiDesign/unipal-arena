@@ -12,6 +12,9 @@ interface ResultData {
 interface Props {
   t: T;
   playerId: string;
+  duelAId: string | null;
+  duelBId: string | null;
+  benchedId: string | null;
   result: ResultData;
   gameResult: GameResultPayload | null;
   room: Room;
@@ -199,22 +202,55 @@ function buildBreakdown(
   }
 }
 
-export default function DuelResult({ t, playerId, result, gameResult, room, onLeave }: Props) {
+export default function DuelResult({ t, playerId, duelAId, duelBId, benchedId, result, gameResult, room, onLeave }: Props) {
   const { winnerId, isDraw, deltaScores, leaderboard } = result;
-  const opponentId = leaderboard.find((e) => e.id !== playerId)?.id ?? "";
-  const headline = isDraw ? t.itsDraw : winnerId === playerId ? t.youWon : t.youLost;
-  const myDelta = deltaScores[playerId] ?? 0;
+  const isBenched = benchedId === playerId;
+
+  // Authoritative duel participant IDs (from arena.duel, kept in ArenaState during RESULT phase)
+  const duelA = duelAId ?? "";
+  const duelB = duelBId ?? "";
+
+  // For active duelist: opponentId is the other duelist.
+  // For benched spectator: show the match from player A's perspective.
+  const opponentId = isBenched ? duelB : (playerId === duelA ? duelB : duelA);
+  const breakdownPlayerId   = isBenched ? duelA : playerId;
+  const breakdownOpponentId = isBenched ? duelB : opponentId;
+
+  // Headline
+  let headline: string;
+  let headlineEmoji: string;
+  if (isBenched) {
+    if (isDraw) {
+      headline = "Draw between duelers";
+      headlineEmoji = "🤝";
+    } else {
+      const winName = winnerId ? playerName(room, winnerId) : "Unknown";
+      headline = `${winName} wins the duel!`;
+      headlineEmoji = "🏆";
+    }
+  } else {
+    headline = isDraw ? t.itsDraw : winnerId === playerId ? t.youWon : t.youLost;
+    headlineEmoji = isDraw ? "🤝" : winnerId === playerId ? "🏆" : "😢";
+  }
+
+  const myDelta = !isBenched ? (deltaScores[playerId] ?? 0) : 0;
   const deltaLabel = myDelta > 0 ? t.pointsEarned.replace("{n}", String(myDelta)) : "";
 
   const breakdown = gameResult
-    ? buildBreakdown(gameResult.gameDefId, gameResult.result.stats as Record<string, unknown>, playerId, opponentId, winnerId, isDraw, room)
+    ? buildBreakdown(gameResult.gameDefId, gameResult.result.stats as Record<string, unknown>, breakdownPlayerId, breakdownOpponentId, winnerId, isDraw, room)
     : null;
 
   return (
     <main className="flex flex-col items-center px-4 py-8 gap-4 max-w-sm mx-auto">
+        {isBenched && (
+          <div className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl bg-(--surface-secondary) text-(--muted) text-sm">
+            🪑 You were benched this round
+          </div>
+        )}
+
         <Card className="w-full">
           <Card.Content className="flex flex-col items-center gap-2 py-8 px-4">
-            <p className="text-5xl">{isDraw ? "🤝" : winnerId === playerId ? "🏆" : "😢"}</p>
+            <p className="text-5xl">{headlineEmoji}</p>
             <p className="text-2xl font-bold text-center">{headline}</p>
             {deltaLabel && <Chip size="lg" color="success" variant="soft">{deltaLabel}</Chip>}
           </Card.Content>

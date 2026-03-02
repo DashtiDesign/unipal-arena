@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { T, Lang } from "../../i18n";
 import type { Room, ArenaState } from "@arena/shared";
 import { Button, Card, Chip } from "@heroui/react";
@@ -12,6 +13,8 @@ interface Props {
   onToggleReady: () => void;
   onLeave: () => void;
 }
+
+const COUNTDOWN_MS = 3000;
 
 export default function PreRound({
   t, lang, room, arena, playerId, isReady, onToggleReady, onLeave,
@@ -29,6 +32,39 @@ export default function PreRound({
 
   const instrText = meta ? (lang === "ar" ? meta.instructions.ar : meta.instructions.en) : "";
   const gameName  = meta ? (lang === "ar" ? meta.displayName.ar : meta.displayName.en) : "";
+
+  // 3-2-1 countdown — derived locally from countdownStartAt
+  const [countdown, setCountdown] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!arena.countdownStartAt) {
+      setCountdown(null);
+      return;
+    }
+    function tick() {
+      const elapsed = Date.now() - arena.countdownStartAt!;
+      const remaining = Math.ceil((COUNTDOWN_MS - elapsed) / 1000);
+      if (remaining <= 0) {
+        setCountdown(null);
+      } else {
+        setCountdown(remaining);
+      }
+    }
+    tick();
+    const id = setInterval(tick, 100);
+    return () => clearInterval(id);
+  }, [arena.countdownStartAt]);
+
+  // Show full-screen countdown overlay once both are ready
+  if (countdown !== null) {
+    return (
+      <main className="flex flex-col items-center justify-center px-4 gap-4 min-h-[60vh]">
+        <p className="text-xs text-(--muted) uppercase tracking-widest">{gameName}</p>
+        <p className="text-9xl font-bold tabular-nums text-(--accent)">{countdown}</p>
+        <p className="text-sm text-(--muted)">{duelLabel}</p>
+      </main>
+    );
+  }
 
   return (
     <main className="flex flex-col items-center px-4 py-6 gap-4 max-w-sm mx-auto">

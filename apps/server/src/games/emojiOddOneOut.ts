@@ -93,8 +93,8 @@ const emojiOddOneOut: GameDefinition<State, Public> = {
       for (const id of s.playerIds) outcomeByPlayerId[id] = 0.5;
     } else if (correctPlayers.length === 2) {
       const [a, b] = s.playerIds;
-      const diff = Math.abs(results[a].elapsedMs - results[b].elapsedMs);
-      if (diff <= 50) {
+      // Strict integer-ms comparison — only an exact tie is a draw
+      if (results[a].elapsedMs === results[b].elapsedMs) {
         outcomeByPlayerId[a] = 0.5;
         outcomeByPlayerId[b] = 0.5;
       } else {

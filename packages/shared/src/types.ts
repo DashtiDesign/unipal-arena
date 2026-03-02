@@ -42,6 +42,8 @@ export interface ArenaState {
   gameId: number;
   startedAt: number | null;
   endsAt: number | null;
+  /** Epoch ms when the 3-2-1 countdown started (set when both players ready, before DUELING). Null otherwise. */
+  countdownStartAt: number | null;
   gameMeta: GameMeta | null; // set during PRE_ROUND, kept through DUELING
   lastResult: DuelResultBroadcast | null;
   lastGameResult: GameResultPayload | null;

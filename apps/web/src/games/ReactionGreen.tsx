@@ -27,7 +27,8 @@ export default function ReactionGreen({ publicState, playerId, opponentId, onInp
   function handleTap(e: React.PointerEvent) {
     e.preventDefault();
     if (IReacted || IWasEarly) return;
-    onInput({});
+    // Send client-side timestamp so server compares against the same clock reference
+    onInput({ clientTapAt: Date.now() });
   }
 
   let label: string;

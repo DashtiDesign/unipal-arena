@@ -88,6 +88,9 @@ export default function Lobby({ t, lang, session, onSessionUpdate, onLeave }: Pr
       <DuelResult
         t={t}
         playerId={playerId}
+        duelAId={arena.duel?.aId ?? null}
+        duelBId={arena.duel?.bId ?? null}
+        benchedId={arena.benchedId}
         result={arena.lastResult}
         gameResult={arena.lastGameResult}
         room={room}

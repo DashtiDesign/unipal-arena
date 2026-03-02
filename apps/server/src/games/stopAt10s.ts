@@ -4,13 +4,13 @@ const TARGET_MS = 10000;
 
 interface State {
   playerIds: string[];
-  startAt: number;             // epoch ms when game started
-  stops: Record<string, number>; // playerId -> epoch ms when they stopped
+  startAt: number;               // epoch ms when game started (for fallback)
+  stops: Record<string, number>; // playerId -> elapsed ms (client-reported)
 }
 interface Public {
-  startAt: number;              // epoch ms — client uses this to sync timer
+  startAt: number;               // epoch ms — client uses this to sync its local timer
   stopped: Record<string, boolean>;
-  stopTimes: Record<string, number | null>; // revealed after both stop or time up
+  stopTimes: Record<string, number | null>; // revealed after both stop or time up (elapsed ms)
 }
 
 const stopAt10s: GameDefinition<State, Public> = {
@@ -31,19 +31,26 @@ const stopAt10s: GameDefinition<State, Public> = {
       stopped: Object.fromEntries(s.playerIds.map((id) => [id, id in s.stops])),
       // Only reveal elapsed times once both have stopped (no cheating)
       stopTimes: bothStopped
-        ? Object.fromEntries(s.playerIds.map((id) => [id, id in s.stops ? s.stops[id] - s.startAt : null]))
+        ? Object.fromEntries(s.playerIds.map((id) => [id, id in s.stops ? s.stops[id] : null]))
         : Object.fromEntries(s.playerIds.map((id) => [id, null])),
     };
   },
-  input(s, playerId) {
+  input(s, playerId, payload) {
     if (playerId in s.stops) return s;
-    return { ...s, stops: { ...s.stops, [playerId]: Date.now() } };
+    // Use client-reported elapsed ms if provided and plausible; fall back to server time
+    const clientMs = (payload as { clientStopMs?: number })?.clientStopMs;
+    const serverMs = Date.now() - s.startAt;
+    // Accept client value if within ±500ms of server measurement (sanity-check)
+    const elapsedMs = (typeof clientMs === "number" && Math.abs(clientMs - serverMs) < 500)
+      ? Math.round(clientMs)
+      : serverMs;
+    return { ...s, stops: { ...s.stops, [playerId]: elapsedMs } };
   },
   resolve(s) {
     const diffs = s.playerIds.map((id) => ({
       id,
-      elapsed: id in s.stops ? s.stops[id] - s.startAt : null,
-      diff: id in s.stops ? Math.abs(s.stops[id] - s.startAt - TARGET_MS) : Infinity,
+      elapsed: id in s.stops ? s.stops[id] : null,
+      diff: id in s.stops ? Math.abs(s.stops[id] - TARGET_MS) : Infinity,
     }));
     const minDiff = Math.min(...diffs.map((d) => d.diff));
     const outcomeByPlayerId: Record<string, number> = {};
@@ -60,7 +67,7 @@ const stopAt10s: GameDefinition<State, Public> = {
     const results: Record<string, { elapsedMs: number | null; diffMs: number }> = {};
     for (const d of diffs) {
       results[d.id] = {
-        elapsedMs: d.elapsed,
+        elapsedMs: d.elapsed,                               // client-reported elapsed ms
         diffMs: d.diff === Infinity ? -1 : Math.round(d.diff),
       };
     }

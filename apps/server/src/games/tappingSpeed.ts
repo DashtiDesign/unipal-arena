@@ -1,5 +1,7 @@
 import { GameDefinition } from "@arena/shared";
 
+const DEBUG = process.env.DEBUG_LOGS === "1";
+
 interface State {
   playerIds: string[];
   taps: Record<string, number>;
@@ -33,7 +35,9 @@ const tappingSpeed: GameDefinition<State, Public> = {
   },
   input(s, playerId) {
     if (s.done) return s;
-    return { ...s, taps: { ...s.taps, [playerId]: (s.taps[playerId] ?? 0) + 1 } };
+    const next = (s.taps[playerId] ?? 0) + 1;
+    if (DEBUG) console.log(`[tapping_speed] tap playerId=${playerId} count=${next}`);
+    return { ...s, taps: { ...s.taps, [playerId]: next } };
   },
   resolve(s) {
     const [a, b] = s.playerIds;

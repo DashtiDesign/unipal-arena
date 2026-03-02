@@ -18,6 +18,7 @@ import {
   GameSyncPayload,
 } from "@arena/shared";
 import { REGISTRY, nextFromDeck, freshDeck } from "./games/registry";
+import { bombExpiresIn } from "./games/whackALogo";
 
 import path from "path";
 
@@ -55,11 +56,13 @@ const gameDecks  = new Map<string, string[]>(); // per-room shuffled game deck
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const gameStates = new Map<string, any>();
 const gameTimers = new Map<string, ReturnType<typeof setTimeout>>();
+// Per-room per-player bomb expiry timers: key = `${roomCode}:${playerId}`
+const bombTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function freshArena(): ArenaState {
-  return { phase: "LOBBY", duel: null, benchedId: null, gameId: 0, startedAt: null, endsAt: null, gameMeta: null, lastResult: null, lastGameResult: null };
+  return { phase: "LOBBY", duel: null, benchedId: null, gameId: 0, startedAt: null, endsAt: null, countdownStartAt: null, gameMeta: null, lastResult: null, lastGameResult: null };
 }
 
 function generateRoomCode(): string {
@@ -101,6 +104,13 @@ function broadcastGameState(roomCode: string) {
 function clearGameTimer(roomCode: string) {
   const t = gameTimers.get(roomCode);
   if (t) { clearTimeout(t); gameTimers.delete(roomCode); }
+  // Clear any pending bomb-expiry timers for this room
+  for (const key of [...bombTimers.keys()]) {
+    if (key.startsWith(`${roomCode}:`)) {
+      clearTimeout(bombTimers.get(key));
+      bombTimers.delete(key);
+    }
+  }
 }
 
 // Games that auto-resolve when a winner is found before time expires (v===1 check)
@@ -163,17 +173,18 @@ function resolveGame(roomCode: string) {
   io.to(roomCode).emit(EVENTS.DUEL_RESULT, { winnerId, isDraw, deltaScores, leaderboard: lb });
 
   const champion = room.players.find((p) => p.score >= WIN_SCORE);
-  if (champion) {
-    arena.phase = "FINISHED";
-    broadcastArena(roomCode);
-    return;
-  }
 
+  // Always show RESULT for RESULT_DELAY_MS — even for the final duel
   const t = setTimeout(() => {
     const r = rooms.get(roomCode);
     const a = arenas.get(roomCode);
     if (!r || !a || a.phase !== "RESULT") return;
-    scheduleDuel(roomCode);
+    if (champion) {
+      a.phase = "FINISHED";
+      broadcastArena(roomCode);
+    } else {
+      scheduleDuel(roomCode);
+    }
   }, RESULT_DELAY_MS);
   gameTimers.set(roomCode, t);
 }
@@ -203,23 +214,26 @@ function scheduleDuel(roomCode: string) {
 
   const matchId = randomUUID();
 
-  arena.phase          = "PRE_ROUND";
-  arena.duel           = { aId, bId, gameDefId: gameDef.id, matchId };
-  arena.gameMeta       = {
+  arena.phase             = "PRE_ROUND";
+  arena.duel              = { aId, bId, gameDefId: gameDef.id, matchId };
+  arena.gameMeta          = {
     gameDefId: gameDef.id,
     displayName: gameDef.displayName,
     instructions: gameDef.instructions,
     durationMs: gameDef.durationMs,
   };
-  arena.benchedId      = benchedId;
-  arena.gameId        += 1;
-  arena.startedAt      = null;
-  arena.endsAt         = null;
-  arena.lastResult     = null;
-  arena.lastGameResult = null;
+  arena.benchedId         = benchedId;
+  arena.gameId           += 1;
+  arena.startedAt         = null;
+  arena.endsAt            = null;
+  arena.countdownStartAt  = null;
+  arena.lastResult        = null;
+  arena.lastGameResult    = null;
 
   broadcastArena(roomCode);
 }
+
+const COUNTDOWN_MS = 3000; // 3-2-1 countdown duration before game starts
 
 function startGame(roomCode: string) {
   const arena = arenas.get(roomCode);
@@ -227,22 +241,30 @@ function startGame(roomCode: string) {
   const def = REGISTRY.get(arena.duel.gameDefId);
   if (!def) return;
 
-  const now = Date.now();
-  arena.phase     = "DUELING";
-  arena.startedAt = now;
-  arena.endsAt    = now + def.durationMs;
-
-  const state = def.init([arena.duel.aId, arena.duel.bId]);
-  gameStates.set(roomCode, state);
-
-  // Phase update first, then initial game state immediately so both players
-  // receive it simultaneously and no one starts with a blank screen
+  // Broadcast the countdown start so clients can display 3-2-1
+  arena.countdownStartAt = Date.now();
   broadcastArena(roomCode);
-  broadcastGameState(roomCode);
-  // Re-broadcast after 150ms to reduce mount-race missed events
-  setTimeout(() => { broadcastArena(roomCode); broadcastGameState(roomCode); }, 150);
 
-  const t = setTimeout(() => resolveGame(roomCode), def.durationMs);
+  const t = setTimeout(() => {
+    const a = arenas.get(roomCode);
+    if (!a?.duel) return;
+    const now = Date.now();
+    a.phase     = "DUELING";
+    a.startedAt = now;
+    a.endsAt    = now + def.durationMs;
+
+    const state = def.init([a.duel.aId, a.duel.bId]);
+    gameStates.set(roomCode, state);
+
+    // Phase update first, then initial game state immediately
+    broadcastArena(roomCode);
+    broadcastGameState(roomCode);
+    // Re-broadcast after 150ms to reduce mount-race missed events
+    setTimeout(() => { broadcastArena(roomCode); broadcastGameState(roomCode); }, 150);
+
+    const gameTimer = setTimeout(() => resolveGame(roomCode), def.durationMs);
+    gameTimers.set(roomCode, gameTimer);
+  }, COUNTDOWN_MS);
   gameTimers.set(roomCode, t);
 }
 
@@ -346,6 +368,27 @@ io.on("connection", (socket) => {
     const newState = def.input(state, socket.id, payload.payload);
     gameStates.set(roomCode, newState);
     broadcastGameState(roomCode);
+
+    // Schedule a re-broadcast when a whack_a_logo bomb expires so all clients see it disappear
+    if (arena.duel.gameDefId === "whack_a_logo") {
+      for (const pid of [arena.duel.aId, arena.duel.bId]) {
+        const timerKey = `${roomCode}:${pid}`;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const slot = (newState as any).slots?.[pid];
+        if (!slot) continue;
+        const msUntilExpiry = bombExpiresIn(slot);
+        if (msUntilExpiry !== null) {
+          const existing = bombTimers.get(timerKey);
+          if (existing) clearTimeout(existing);
+          bombTimers.set(timerKey, setTimeout(() => {
+            bombTimers.delete(timerKey);
+            const cur = gameStates.get(roomCode);
+            if (!cur) return;
+            broadcastGameState(roomCode);
+          }, msUntilExpiry + 50)); // +50ms buffer for network jitter
+        }
+      }
+    }
 
     // Send per-player private updates (e.g. hidden hints in higher_lower)
     if (def.privateUpdate) {

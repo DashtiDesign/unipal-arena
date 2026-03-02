@@ -42,16 +42,22 @@ const reactionGreen: GameDefinition<State, Public> = {
       earlyTap: s.earlyTap,
     };
   },
-  input(s, playerId) {
+  input(s, playerId, payload) {
     // Already tapped
     if (playerId in s.reactions || playerId in s.earlyTap) return s;
 
-    const now = Date.now();
-    if (now < s.triggerAt) {
+    // Use client-reported tap time if provided and within ±500ms of server time (sanity-check)
+    const clientTapAt = (payload as { clientTapAt?: number })?.clientTapAt;
+    const serverNow = Date.now();
+    const tapAt = (typeof clientTapAt === "number" && Math.abs(clientTapAt - serverNow) < 500)
+      ? clientTapAt
+      : serverNow;
+
+    if (tapAt < s.triggerAt) {
       // Early tap — instant loss marker
       return { ...s, earlyTap: { ...s.earlyTap, [playerId]: true } };
     }
-    return { ...s, reactions: { ...s.reactions, [playerId]: now } };
+    return { ...s, reactions: { ...s.reactions, [playerId]: tapAt } };
   },
   isResolved(s) {
     // Any early tap is immediately final

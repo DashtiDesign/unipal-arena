@@ -12,6 +12,8 @@ export default function StopAt10s({ publicState, playerId, onInput }: GameCompon
   const s = publicState as State;
   const myStopped = s.stopped[playerId] ?? false;
   const [elapsed, setElapsed] = useState(0);
+  // localStopMs: the client-captured elapsed ms at the moment of tap — never changes after set
+  const localStopMsRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -19,6 +21,8 @@ export default function StopAt10s({ publicState, playerId, onInput }: GameCompon
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       return;
     }
+    // Reset local stop when a new game round starts
+    localStopMsRef.current = null;
     function tick() {
       setElapsed(Date.now() - s.startAt);
       rafRef.current = requestAnimationFrame(tick);
@@ -29,12 +33,21 @@ export default function StopAt10s({ publicState, playerId, onInput }: GameCompon
 
   function handleStop(e: React.PointerEvent) {
     e.preventDefault();
-    if (!myStopped) onInput({});
+    if (myStopped || localStopMsRef.current !== null) return;
+    // Capture the elapsed time at this exact moment — this is what we display and send
+    const clientStopMs = Date.now() - s.startAt;
+    localStopMsRef.current = clientStopMs;
+    setElapsed(clientStopMs); // freeze display immediately
+    onInput({ clientStopMs });
   }
 
-  const displayMs = myStopped ? (s.stopTimes[playerId] ?? elapsed) : elapsed;
+  // Display priority: local stop (immediate, no server roundtrip) > server stopTime > live elapsed
+  const displayMs = localStopMsRef.current !== null
+    ? localStopMsRef.current
+    : (s.stopTimes[playerId] ?? elapsed);
+
   const timerColor =
-    displayMs < 9000 ? "text-(--foreground)" :
+    displayMs < 9000  ? "text-(--foreground)" :
     displayMs < 10000 ? "text-(--warning)" :
     "text-(--danger)";
 
