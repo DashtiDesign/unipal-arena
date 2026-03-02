@@ -85,7 +85,7 @@ export default function Home({ t, onJoined }: Props) {
       pendingSession = { roomCode: payload.roomCode, playerId: payload.playerId, room: payload.room };
       onJoined({
         ...pendingSession,
-        arena: { phase: "LOBBY", duel: null, benchedId: null, gameId: 0, startedAt: null, endsAt: null, gameMeta: null, lastResult: null, lastGameResult: null },
+        arena: { phase: "LOBBY", duel: null, benchedId: null, gameId: 0, startedAt: null, endsAt: null, countdownStartAt: null, gameMeta: null, lastResult: null, lastGameResult: null },
       });
     }
 
