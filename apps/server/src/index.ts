@@ -32,9 +32,9 @@ app.use(express.json());
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 if (process.env.NODE_ENV === "production") {
-  const webDist = path.resolve(__dirname, "../../web/dist");
-  app.use(express.static(webDist));
-  app.get("*", (_req, res) => res.sendFile(path.join(webDist, "index.html")));
+  const distPath = path.resolve(process.cwd(), "apps/web/dist");
+  app.use(express.static(distPath));
+  app.get("*", (_req, res) => res.sendFile(path.join(distPath, "index.html")));
 }
 
 const httpServer = createServer(app);
