@@ -57,11 +57,14 @@ const stopAt10s: GameDefinition<State, Public> = {
       }
     }
 
-    const stats: Record<string, string> = {};
+    const results: Record<string, { elapsedMs: number | null; diffMs: number }> = {};
     for (const d of diffs) {
-      stats[d.id] = d.elapsed != null ? `${d.elapsed}ms (diff: ${Math.round(d.diff)}ms)` : "no stop";
+      results[d.id] = {
+        elapsedMs: d.elapsed,
+        diffMs: d.diff === Infinity ? -1 : Math.round(d.diff),
+      };
     }
-    return { outcomeByPlayerId, stats: { results: stats, target: `${TARGET_MS}ms` } };
+    return { outcomeByPlayerId, stats: { results, targetMs: TARGET_MS } };
   },
 };
 

@@ -22,7 +22,7 @@ import { REGISTRY, nextFromDeck, freshDeck } from "./games/registry";
 const PORT = process.env.PORT ?? 3001;
 const MAX_PLAYERS = 12;
 const WIN_SCORE = 10;
-const RESULT_DELAY_MS = 4000;
+const RESULT_DELAY_MS = 20000;
 
 const app = express();
 app.use(cors());
@@ -271,7 +271,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on(EVENTS.LEAVE_ROOM, (payload: LeaveRoomPayload) => {
-    handleLeave(socket.id, payload?.roomCode);
+    handleLeave(socket.id, payload?.roomCode, "explicit");
   });
 
   socket.on(EVENTS.TOGGLE_READY, (payload: ToggleReadyPayload) => {
@@ -347,20 +347,22 @@ io.on("connection", (socket) => {
 
     // Stale matchId — client is behind; push current arena so it updates matchId/gameDefId
     if (arena.duel.matchId !== payload?.matchId) {
-      socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
-      // Also push a game state snapshot so client doesn't need to re-sync after updating
-      const def   = REGISTRY.get(arena.duel.gameDefId);
-      const state = gameStates.get(roomCode);
-      if (def && state) {
-        const remainingMs = arena.endsAt ? Math.max(0, arena.endsAt - Date.now()) : 0;
-        socket.emit(EVENTS.GAME_STATE, {
-          roomCode,
-          matchId: arena.duel.matchId,
-          gameId: arena.gameId,
-          gameDefId: arena.duel.gameDefId,
-          publicState: def.publicState(state),
-          remainingMs,
-        });
+      if (room) {
+        socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
+        // Also push a game state snapshot so client doesn't need to re-sync after updating
+        const def   = REGISTRY.get(arena.duel.gameDefId);
+        const state = gameStates.get(roomCode);
+        if (def && state) {
+          const remainingMs = arena.endsAt ? Math.max(0, arena.endsAt - Date.now()) : 0;
+          socket.emit(EVENTS.GAME_STATE, {
+            roomCode,
+            matchId: arena.duel.matchId,
+            gameId: arena.gameId,
+            gameDefId: arena.duel.gameDefId,
+            publicState: def.publicState(state),
+            remainingMs,
+          });
+        }
       }
       return;
     }
@@ -399,7 +401,7 @@ io.on("connection", (socket) => {
   });
 });
 
-function handleLeave(socketId: string, roomCode?: string) {
+function handleLeave(socketId: string, roomCode?: string, reason: "explicit" | "disconnect" = "disconnect") {
   const targets = roomCode
     ? ([rooms.get(roomCode)].filter(Boolean) as Room[])
     : [...rooms.values()];
@@ -408,6 +410,7 @@ function handleLeave(socketId: string, roomCode?: string) {
     const idx = room.players.findIndex((p) => p.id === socketId);
     if (idx === -1) continue;
     room.players.splice(idx, 1);
+    console.log(`[handleLeave] room=${room.id} socket=${socketId} reason=${reason}`);
 
     if (room.players.length === 0) {
       rooms.delete(room.id);
@@ -422,6 +425,7 @@ function handleLeave(socketId: string, roomCode?: string) {
       if (arena.phase === "PRE_ROUND" || arena.phase === "DUELING") {
         const duelIds = [arena.duel?.aId, arena.duel?.bId];
         if (duelIds.includes(socketId)) {
+          console.log(`[handleLeave] duel reset — room=${room.id} socket=${socketId} was dueling`);
           clearGameTimer(room.id);
           gameStates.delete(room.id);
           for (const p of room.players) p.isReady = false;

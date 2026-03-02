@@ -116,7 +116,9 @@ const rockPaperScissors: GameDefinition<State, Public> = {
       }
     }
 
-    return { outcomeByPlayerId, stats: { subRounds: s.subRound, choices: s.choices } };
+    // final choices = winning sub-round choices (or last partial choices at timeout)
+    const finalChoices = Object.keys(s.choices).length > 0 ? s.choices : null;
+    return { outcomeByPlayerId, stats: { subRounds: s.subRound, finalChoices, winner: s.winner } };
   },
 };
 

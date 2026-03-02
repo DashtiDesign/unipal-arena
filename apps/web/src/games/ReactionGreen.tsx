@@ -40,7 +40,7 @@ export default function ReactionGreen({ publicState, playerId, opponentId, onInp
     colorClass = "bg-success text-success-content cursor-not-allowed";
   } else if (isGreen) {
     label = "TAP NOW!";
-    colorClass = "bg-success text-success-content animate-pulse";
+    colorClass = "bg-success text-success-content";
   } else {
     label = "Wait…";
     colorClass = "bg-error text-error-content";

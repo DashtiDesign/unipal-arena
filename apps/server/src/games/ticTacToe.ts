@@ -2,7 +2,7 @@ import { GameDefinition } from "@arena/shared";
 
 type Cell = "X" | "O" | null;
 
-const TURN_MS = 5000;
+const TURN_MS = 15000;
 const MAX_TURNS = 9;
 
 interface State {
@@ -40,10 +40,10 @@ function checkWinner(board: Cell[], mark: "X" | "O"): boolean {
 const ticTacToe: GameDefinition<State, Public> = {
   id: "tic_tac_toe",
   displayName: { en: "Tic-Tac-Toe", ar: "إكس-أو" },
-  durationMs: MAX_TURNS * TURN_MS, // 45s — enough for a full game
+  durationMs: MAX_TURNS * TURN_MS, // 135s — enough for a full game
   instructions: {
-    en: "Tic-Tac-Toe! Three in a row wins. You have 5s per turn — don't run out!",
-    ar: "إكس-أو! ثلاثة في صف يفوز. لديك 5 ثوانٍ لكل دور — لا تتأخر!",
+    en: "Tic-Tac-Toe! Three in a row wins. You have 15s per turn — don't run out!",
+    ar: "إكس-أو! ثلاثة في صف يفوز. لديك 15 ثانية لكل دور — لا تتأخر!",
   },
   init(playerIds) {
     const marks: Record<string, "X" | "O"> = {

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { T, Lang } from "../i18n";
 import { socket } from "../socket";
 import { EVENTS } from "@arena/shared";
-import type { Room, ArenaState, ArenaUpdatePayload, LeaderboardEntry } from "@arena/shared";
+import type { Room, ArenaState, ArenaUpdatePayload, LeaderboardEntry, GameResultPayload } from "@arena/shared";
 import type { Session } from "../App";
 import PreRound from "./arena/PreRound";
 import InGame from "./arena/InGame";
@@ -28,19 +28,26 @@ interface DuelResultData {
 export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate, onLeave }: Props) {
   const { roomCode, playerId, room, arena } = session;
   const [lastResult, setLastResult] = useState<DuelResultData | null>(null);
+  const [lastGameResult, setLastGameResult] = useState<GameResultPayload | null>(null);
 
   useEffect(() => {
     function onArenaUpdate(payload: ArenaUpdatePayload) {
+      if (!payload?.room) return;
       onSessionUpdate(payload.room, payload.arena);
     }
     function onDuelResult(payload: DuelResultData) {
       setLastResult(payload);
     }
+    function onGameResult(payload: GameResultPayload) {
+      setLastGameResult(payload);
+    }
     socket.on(EVENTS.ARENA_UPDATE, onArenaUpdate);
     socket.on("duel:result", onDuelResult);
+    socket.on(EVENTS.GAME_RESULT, onGameResult);
     return () => {
       socket.off(EVENTS.ARENA_UPDATE, onArenaUpdate);
       socket.off("duel:result", onDuelResult);
+      socket.off(EVENTS.GAME_RESULT, onGameResult);
     };
   }, [onSessionUpdate]);
 
@@ -101,12 +108,18 @@ export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate,
 
   // ── RESULT ───────────────────────────────────────────────────────────────
   if (arena.phase === "RESULT" && lastResult) {
+    // Only show game result if it matches the current matchId (not stale)
+    const matchedGameResult = lastGameResult && arena.duel?.matchId === lastGameResult.matchId
+      ? lastGameResult
+      : null;
     return (
       <DuelResult
         t={t}
         onLangToggle={onLangToggle}
         playerId={playerId}
         result={lastResult}
+        gameResult={matchedGameResult}
+        room={room}
         onLeave={handleLeave}
       />
     );

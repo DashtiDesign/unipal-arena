@@ -105,11 +105,11 @@ const reactionGreen: GameDefinition<State, Public> = {
       }
     }
 
-    const reactionTimes = {
-      [a]: aEarly ? "early" : aTime ? `${aTime - s.triggerAt}ms` : "no tap",
-      [b]: bEarly ? "early" : bTime ? `${bTime - s.triggerAt}ms` : "no tap",
+    const results: Record<string, { early: boolean; elapsedMs: number | null }> = {
+      [a]: { early: aEarly, elapsedMs: aTime != null ? aTime - s.triggerAt : null },
+      [b]: { early: bEarly, elapsedMs: bTime != null ? bTime - s.triggerAt : null },
     };
-    return { outcomeByPlayerId, stats: { reactionTimes } };
+    return { outcomeByPlayerId, stats: { results } };
   },
 };
 
