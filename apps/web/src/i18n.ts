@@ -48,7 +48,7 @@ export interface T {
 }
 
 const en: T = {
-  appName: "Arena Al-Halba",
+  appName: "Unipal Arena",
   createRoom: "Create Room",
   joinRoom: "Join Room",
   enterCode: "4-digit room code",
@@ -89,7 +89,7 @@ const en: T = {
 };
 
 const ar: T = {
-  appName: "ميدان الحلبة",
+  appName: "حلبة يونيبال",
   createRoom: "إنشاء غرفة",
   joinRoom: "الانضمام لغرفة",
   enterCode: "رمز الغرفة (4 أرقام)",
