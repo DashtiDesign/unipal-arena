@@ -22,7 +22,7 @@ import { REGISTRY, nextFromDeck, freshDeck } from "./games/registry";
 const PORT = process.env.PORT ?? 3001;
 const MAX_PLAYERS = 12;
 const WIN_SCORE = 10;
-const RESULT_DELAY_MS = 20000;
+const RESULT_DELAY_MS = 12000;
 
 const app = express();
 app.use(cors());
@@ -137,7 +137,7 @@ function resolveGame(roomCode: string) {
   const lb = leaderboard(room);
   arena.phase = "RESULT";
   broadcastArena(roomCode);
-  io.to(roomCode).emit("duel:result", { winnerId, isDraw, deltaScores, leaderboard: lb });
+  io.to(roomCode).emit(EVENTS.DUEL_RESULT, { winnerId, isDraw, deltaScores, leaderboard: lb });
 
   const champion = room.players.find((p) => p.score >= WIN_SCORE);
   if (champion) {
@@ -214,6 +214,8 @@ function startGame(roomCode: string) {
   // receive it simultaneously and no one starts with a blank screen
   broadcastArena(roomCode);
   broadcastGameState(roomCode);
+  // Re-broadcast after 150ms to reduce mount-race missed events
+  setTimeout(() => broadcastGameState(roomCode), 150);
 
   const t = setTimeout(() => resolveGame(roomCode), def.durationMs);
   gameTimers.set(roomCode, t);
@@ -343,30 +345,20 @@ io.on("connection", (socket) => {
     const roomCode = (payload?.roomCode ?? "").trim();
     const room     = rooms.get(roomCode);
     const arena    = arenas.get(roomCode);
-    if (!arena || arena.phase !== "DUELING" || !arena.duel) return;
 
-    // Stale matchId — client is behind; push current arena so it updates matchId/gameDefId
-    if (arena.duel.matchId !== payload?.matchId) {
-      if (room) {
-        socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
-        // Also push a game state snapshot so client doesn't need to re-sync after updating
-        const def   = REGISTRY.get(arena.duel.gameDefId);
-        const state = gameStates.get(roomCode);
-        if (def && state) {
-          const remainingMs = arena.endsAt ? Math.max(0, arena.endsAt - Date.now()) : 0;
-          socket.emit(EVENTS.GAME_STATE, {
-            roomCode,
-            matchId: arena.duel.matchId,
-            gameId: arena.gameId,
-            gameDefId: arena.duel.gameDefId,
-            publicState: def.publicState(state),
-            remainingMs,
-          });
-        }
-      }
+    // Room not found — nothing to do
+    if (!room) return;
+
+    // Arena not in DUELING or no active duel — push current arena so client can recover its phase
+    if (!arena || arena.phase !== "DUELING" || !arena.duel) {
+      if (arena) socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
       return;
     }
 
+    // Always push current arena so client has the right matchId/phase
+    socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
+
+    // Stale matchId just needs the arena update above; still send game state for the new matchId
     const def   = REGISTRY.get(arena.duel.gameDefId);
     const state = gameStates.get(roomCode);
     if (!def || !state) return;

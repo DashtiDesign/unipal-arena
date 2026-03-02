@@ -5,10 +5,10 @@ export const CLIENT_EVENTS = {
   LEAVE_ROOM: "room:leave",
   TOGGLE_READY: "room:toggleReady",
   // Arena
-  DUEL_RESULT: "arena:duelResult",
   PLAY_AGAIN: "arena:playAgain",
   // Game
   GAME_INPUT: "game:input",
+  GAME_SYNC: "game:sync",
 } as const;
 
 // Server -> Client
@@ -18,11 +18,11 @@ export const SERVER_EVENTS = {
   ROOM_ERROR: "room:error",
   // Arena
   ARENA_UPDATE: "arena:update",
+  DUEL_RESULT: "duel:result",
   // Game
   GAME_STATE: "game:state",
   GAME_RESULT: "game:result",
   GAME_PRIVATE: "game:private",
-  GAME_SYNC: "game:sync",
 } as const;
 
 export const EVENTS = { ...CLIENT_EVENTS, ...SERVER_EVENTS } as const;

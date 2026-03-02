@@ -94,7 +94,11 @@ export default function TicTacToe({
       )}
 
       {/* Status */}
-      <p className={`text-base text-center min-h-[1.5rem] ${statusClass}`}>{statusMsg}</p>
+      {!gameOver && !isMyTurn ? (
+        <p className="text-xl font-bold text-center text-base-content/50">Opponent's turn…</p>
+      ) : (
+        <p className={`text-base text-center min-h-[1.5rem] ${statusClass}`}>{statusMsg}</p>
+      )}
 
       {/* Board */}
       <div className="grid grid-cols-3 gap-2 w-full max-w-xs">

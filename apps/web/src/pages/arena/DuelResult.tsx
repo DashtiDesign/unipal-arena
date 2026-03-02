@@ -101,8 +101,14 @@ function buildBreakdown(
       const opp  = results?.[opponentId];
       const fmtStop = (r: StopResult | undefined) => {
         if (!r || r.elapsedMs == null) return "No stop";
-        const diff = r.diffMs >= 0 ? fmtMs(r.diffMs) : "—";
-        return `${fmtMs(r.elapsedMs)} (Δ ${diff})`;
+        const diffLabel = r.diffMs < 0
+          ? "—"
+          : r.elapsedMs > 10000
+            ? `${fmtMs(r.diffMs)} above target`
+            : r.elapsedMs < 10000
+              ? `${fmtMs(r.diffMs)} below target`
+              : "exactly on target";
+        return `${fmtMs(r.elapsedMs)} · ${diffLabel}`;
       };
       return {
         rows: [
@@ -168,11 +174,11 @@ function buildBreakdown(
       } else if (iWon) {
         reason = !oppCorrect
           ? "Opponent's answer was wrong"
-          : `${myName} answered faster (${fmtMs(mine?.elapsedMs)} vs ${fmtMs(opp?.elapsedMs)})`;
+          : `${myName} answered faster — ${fmtMs(mine?.elapsedMs)} vs ${fmtMs(opp?.elapsedMs)}`;
       } else {
         reason = !myCorrect
           ? "Your answer was wrong"
-          : `${oppName} answered faster (${fmtMs(opp?.elapsedMs)} vs ${fmtMs(mine?.elapsedMs)})`;
+          : `${oppName} answered faster — ${fmtMs(opp?.elapsedMs)} vs ${fmtMs(mine?.elapsedMs)}`;
       }
       return {
         rows: [

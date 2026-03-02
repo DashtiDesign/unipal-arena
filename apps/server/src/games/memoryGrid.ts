@@ -6,21 +6,19 @@ const REVEAL_MS = 3000; // show for 3s
 
 interface State {
   playerIds: string[];
-  targets: number[];           // sorted indices of highlighted cells
-  showUntil: number;           // epoch ms — server sets, client hides after this
-  answers: Record<string, number[]>;  // player -> cells tapped so far
-  locked: Record<string, boolean>;    // wrong answer = locked out
-  finishedAt: Record<string, number>; // playerId -> epoch ms when they completed correctly
+  targets: number[];                    // sorted indices of highlighted cells
+  showUntil: number;                    // epoch ms — server sets, client hides after this
+  answers: Record<string, number[]>;    // playerId -> cells tapped so far (any cell, no dupes)
+  finishedAt: Record<string, number>;   // playerId -> elapsedMs since showUntil when they hit 5 taps
 }
 
 interface Public {
   targets: number[] | null;    // revealed during memorize phase, null after
   showUntil: number;           // epoch ms — client uses this to hide grid
   tappedCount: Record<string, number>;
-  locked: Record<string, boolean>;
-  // Revealed once both done (correct or locked); null while waiting
+  // Revealed once both done; null while waiting
   results: Record<string, { correct: boolean; elapsedMs: number }> | null;
-  numCells: number;            // how many cells to find
+  numCells: number;            // how many cells to tap
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -33,7 +31,13 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 function isDone(s: State, playerId: string): boolean {
-  return playerId in s.finishedAt || s.locked[playerId];
+  return (s.answers[playerId] ?? []).length >= NUM_CELLS;
+}
+
+function isCorrect(s: State, playerId: string): boolean {
+  const tapped = [...(s.answers[playerId] ?? [])].sort((a, b) => a - b);
+  if (tapped.length !== s.targets.length) return false;
+  return tapped.every((v, i) => v === s.targets[i]);
 }
 
 const memoryGrid: GameDefinition<State, Public> = {
@@ -41,8 +45,8 @@ const memoryGrid: GameDefinition<State, Public> = {
   displayName: { en: "Memory Grid", ar: "شبكة الذاكرة" },
   durationMs: 15000, // 3s reveal + 12s to answer
   instructions: {
-    en: "Memorize the highlighted cells, then tap them all! First correct wins.",
-    ar: "احفظ الخلايا المضيئة، ثم انقر عليها جميعاً! أول إجابة صحيحة تفوز.",
+    en: "Memorize the highlighted cells, then tap all 5! First correct wins.",
+    ar: "احفظ الخلايا المضيئة، ثم انقر على جميع الـ5! أول إجابة صحيحة تفوز.",
   },
   init(playerIds) {
     const indices = Array.from({ length: GRID_SIZE }, (_, i) => i);
@@ -52,7 +56,6 @@ const memoryGrid: GameDefinition<State, Public> = {
       targets,
       showUntil: Date.now() + REVEAL_MS,
       answers: Object.fromEntries(playerIds.map((id) => [id, []])),
-      locked: Object.fromEntries(playerIds.map((id) => [id, false])),
       finishedAt: {},
     };
   },
@@ -63,10 +66,9 @@ const memoryGrid: GameDefinition<State, Public> = {
       targets: now < s.showUntil ? s.targets : null,
       showUntil: s.showUntil,
       tappedCount: Object.fromEntries(s.playerIds.map((id) => [id, (s.answers[id] ?? []).length])),
-      locked: s.locked,
       results: allDone
         ? Object.fromEntries(s.playerIds.map((id) => [id, {
-            correct: id in s.finishedAt,
+            correct: isCorrect(s, id),
             elapsedMs: s.finishedAt[id] ?? 0,
           }]))
         : null,
@@ -75,28 +77,25 @@ const memoryGrid: GameDefinition<State, Public> = {
   },
   input(s, playerId, payload) {
     if (Date.now() < s.showUntil) return s;
-    if (isDone(s, playerId)) return s; // already finished or locked
+    if (isDone(s, playerId)) return s; // already tapped 5 cells
 
     const cell = (payload as { cell: number }).cell;
     if (!Number.isInteger(cell) || cell < 0 || cell >= GRID_SIZE) return s;
 
     const current = s.answers[playerId] ?? [];
-    if (current.includes(cell)) return s;
+    if (current.includes(cell)) return s; // no duplicate taps
 
-    if (!s.targets.includes(cell)) {
-      // Wrong tap — lock out this player
-      return { ...s, locked: { ...s.locked, [playerId]: true } };
-    }
+    const next = [...current, cell];
+    const finished = next.length === NUM_CELLS;
 
-    const next = [...current, cell].sort((a, b) => a - b);
-    const complete = next.length === s.targets.length &&
-      next.every((v, i) => v === s.targets[i]);
+    // elapsedMs measured from when the recall phase started (showUntil)
+    const elapsedMs = finished ? Math.max(0, Date.now() - s.showUntil) : undefined;
 
     return {
       ...s,
       answers: { ...s.answers, [playerId]: next },
-      finishedAt: complete
-        ? { ...s.finishedAt, [playerId]: Date.now() }
+      finishedAt: finished
+        ? { ...s.finishedAt, [playerId]: elapsedMs! }
         : s.finishedAt,
     };
   },
@@ -108,16 +107,19 @@ const memoryGrid: GameDefinition<State, Public> = {
     const results: Record<string, { correct: boolean; elapsedMs: number }> = {};
 
     for (const id of s.playerIds) {
-      const correct = id in s.finishedAt;
-      const elapsedMs = s.finishedAt[id] ?? Infinity;
-      results[id] = { correct, elapsedMs };
+      results[id] = {
+        correct: isCorrect(s, id),
+        elapsedMs: s.finishedAt[id] ?? Infinity,
+      };
     }
 
     const correctPlayers = s.playerIds.filter((id) => results[id].correct);
 
     if (correctPlayers.length === 0) {
+      // Both wrong — draw
       for (const id of s.playerIds) outcomeByPlayerId[id] = 0.5;
     } else if (correctPlayers.length === 2) {
+      // Both correct — faster wins (≤50ms threshold = draw)
       const [a, b] = s.playerIds;
       const diff = Math.abs(results[a].elapsedMs - results[b].elapsedMs);
       if (diff <= 50) {
@@ -128,6 +130,7 @@ const memoryGrid: GameDefinition<State, Public> = {
         for (const id of s.playerIds) outcomeByPlayerId[id] = id === faster ? 1 : 0;
       }
     } else {
+      // Exactly one correct — they win
       for (const id of s.playerIds) {
         outcomeByPlayerId[id] = results[id].correct ? 1 : 0;
       }
@@ -135,7 +138,7 @@ const memoryGrid: GameDefinition<State, Public> = {
 
     return {
       outcomeByPlayerId,
-      stats: { targets: s.targets, locked: s.locked, results },
+      stats: { targets: s.targets, results },
     };
   },
 };

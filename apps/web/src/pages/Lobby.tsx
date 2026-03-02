@@ -32,7 +32,7 @@ export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate,
 
   useEffect(() => {
     function onArenaUpdate(payload: ArenaUpdatePayload) {
-      if (!payload?.room) return;
+      if (!payload?.room || !payload?.arena) return;
       onSessionUpdate(payload.room, payload.arena);
     }
     function onDuelResult(payload: DuelResultData) {
@@ -42,11 +42,11 @@ export default function Lobby({ t, lang, onLangToggle, session, onSessionUpdate,
       setLastGameResult(payload);
     }
     socket.on(EVENTS.ARENA_UPDATE, onArenaUpdate);
-    socket.on("duel:result", onDuelResult);
+    socket.on(EVENTS.DUEL_RESULT, onDuelResult);
     socket.on(EVENTS.GAME_RESULT, onGameResult);
     return () => {
       socket.off(EVENTS.ARENA_UPDATE, onArenaUpdate);
-      socket.off("duel:result", onDuelResult);
+      socket.off(EVENTS.DUEL_RESULT, onDuelResult);
       socket.off(EVENTS.GAME_RESULT, onGameResult);
     };
   }, [onSessionUpdate]);

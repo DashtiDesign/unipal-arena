@@ -9,16 +9,10 @@ export default function TappingSpeed({ publicState, playerId, opponentId, onInpu
 
   return (
     <div className="flex flex-col items-center gap-4 py-6 w-full select-none">
-      {/* Live scoreboard */}
-      <div className="flex justify-around w-full">
-        <div className="flex flex-col items-center">
-          <span className="text-xs text-base-content/60 uppercase">You</span>
-          <span className="text-5xl font-bold tabular-nums text-primary">{myTaps}</span>
-        </div>
-        <div className="flex flex-col items-center">
-          <span className="text-xs text-base-content/60 uppercase">Opponent</span>
-          <span className="text-5xl font-bold tabular-nums text-secondary">{oppTaps}</span>
-        </div>
+      {/* Live tap count — own taps only during the round */}
+      <div className="flex flex-col items-center">
+        <span className="text-xs text-base-content/60 uppercase">Your taps</span>
+        <span className="text-5xl font-bold tabular-nums text-primary">{myTaps}</span>
       </div>
 
       <p className="badge badge-neutral tabular-nums text-sm">{Math.ceil(remainingMs / 1000)}s left</p>

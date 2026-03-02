@@ -10,7 +10,6 @@ interface State {
   targets: number[] | null;  // non-null during reveal phase
   showUntil: number;         // epoch ms
   tappedCount: Record<string, number>;
-  locked: Record<string, boolean>;
   results: Record<string, PlayerResult> | null;
   numCells: number;
 }
@@ -29,9 +28,8 @@ export default function MemoryGrid({
   }, []);
 
   const revealing = now < s.showUntil;
-  const iLocked   = s.locked[playerId] ?? false;
-  const oppLocked = s.locked[opponentId] ?? false;
-  const iDone     = iLocked || !!(s.results); // finished when results are revealed
+  const iDone = tapped.length >= s.numCells;
+  const oppDone = (s.tappedCount[opponentId] ?? 0) >= s.numCells;
 
   // Both done — show results
   if (s.results) {
@@ -44,7 +42,7 @@ export default function MemoryGrid({
       <div className="flex flex-col items-center gap-4 py-6 w-full">
         <p className="text-4xl">{isDraw ? "🤝" : iWon ? "🎉" : "😢"}</p>
         <p className="text-xl font-bold">
-          {isDraw ? "Draw!" : iWon ? "You remembered!" : mine?.correct ? "Too slow!" : "Wrong tap!"}
+          {isDraw ? "Draw!" : iWon ? "You remembered!" : mine?.correct ? "Too slow!" : "Wrong selection!"}
         </p>
         <div className="w-full flex flex-col gap-2 max-w-xs">
           {[
@@ -69,7 +67,7 @@ export default function MemoryGrid({
   }
 
   function handleTap(i: number) {
-    if (revealing || iLocked || iDone) return;
+    if (revealing || iDone) return;
     if (tapped.includes(i)) return;
     const next = [...tapped, i];
     setTapped(next);
@@ -83,28 +81,14 @@ export default function MemoryGrid({
         : "bg-base-300";
     }
     if (tapped.includes(i)) return "bg-primary text-primary-content";
-    if (iLocked) return "bg-base-300 opacity-40 cursor-not-allowed";
+    if (iDone) return "bg-base-200 opacity-40 cursor-not-allowed";
     return "bg-base-200 hover:bg-base-300 active:scale-90";
   }
 
   const revealSecondsLeft = Math.max(0, Math.ceil((s.showUntil - now) / 1000));
 
-  // After locking, show waiting state until opponent also finishes
-  if (iLocked) {
-    return (
-      <div className="flex flex-col items-center gap-4 py-10 w-full">
-        <p className="text-error text-lg font-bold">❌ Wrong tap — locked out!</p>
-        <div className="flex flex-col items-center gap-1 mt-2">
-          <span className="loading loading-dots loading-md" />
-          <p className="text-xs text-base-content/50">Waiting for opponent…</p>
-        </div>
-        <p className="badge badge-neutral tabular-nums">{Math.ceil(remainingMs / 1000)}s</p>
-      </div>
-    );
-  }
-
-  // After completing all cells correctly, show waiting state
-  if (s.tappedCount[playerId] >= s.numCells && !iLocked) {
+  // After tapping all 5, show waiting state
+  if (iDone) {
     return (
       <div className="flex flex-col items-center gap-4 py-10 w-full">
         <p className="text-success text-lg font-bold">✓ Done!</p>
@@ -149,8 +133,8 @@ export default function MemoryGrid({
       )}
 
       {/* Opponent status */}
-      {oppLocked && (
-        <p className="text-xs text-base-content/40">Opponent made a wrong tap!</p>
+      {oppDone && (
+        <p className="text-xs text-base-content/40">Opponent finished!</p>
       )}
     </div>
   );

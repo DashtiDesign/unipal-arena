@@ -26,7 +26,7 @@ export default function GameFrame({
   const publicStateRef = useRef<unknown>(null);
 
   // Reset all local game state and request a snapshot whenever matchId changes.
-  // If no state arrives within 800ms, retry the sync up to 2 more times.
+  // Watchdog: poll every 300ms (up to 10 times) until a matching GAME_STATE arrives.
   useEffect(() => {
     setPublicState(null);
     publicStateRef.current = null;
@@ -34,17 +34,15 @@ export default function GameFrame({
     setPrivateEvents([]);
     socket.emit(EVENTS.GAME_SYNC, { roomCode, matchId });
 
-    const retryDelays = [800, 1600];
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    for (const delay of retryDelays) {
-      const t = setTimeout(() => {
-        if (publicStateRef.current === null) {
-          socket.emit(EVENTS.GAME_SYNC, { roomCode, matchId });
-        }
-      }, delay);
-      timers.push(t);
-    }
-    return () => { timers.forEach(clearTimeout); };
+    let tries = 0;
+    const interval = setInterval(() => {
+      if (publicStateRef.current !== null) { clearInterval(interval); return; }
+      tries += 1;
+      if (tries >= 10) { clearInterval(interval); return; }
+      socket.emit(EVENTS.GAME_SYNC, { roomCode, matchId });
+    }, 300);
+
+    return () => { clearInterval(interval); };
   }, [matchId, durationMs, roomCode]);
 
   const onRemainingMsCb = useCallback((ms: number) => {
