@@ -25,6 +25,7 @@ const PORT = Number(process.env.PORT) || 3001;
 const MAX_PLAYERS = 12;
 const WIN_SCORE = 10;
 const RESULT_DELAY_MS = 10000;
+const DEBUG = process.env.DEBUG_LOGS === "1";
 
 const app = express();
 app.use(cors());
@@ -245,6 +246,11 @@ function startGame(roomCode: string) {
 
 io.on("connection", (socket) => {
   console.log(`[connect] ${socket.id}`);
+  if (DEBUG) {
+    socket.onAny((event, payload) => {
+      console.log(`[debug:any] event="${event}" payload=${JSON.stringify(payload)}`);
+    });
+  }
 
   socket.on(EVENTS.CREATE_ROOM, (payload: CreateRoomPayload) => {
     const name = (payload?.name ?? "").trim();
@@ -259,12 +265,13 @@ io.on("connection", (socket) => {
     arenas.set(roomCode, freshArena());
     socket.join(roomCode);
     socket.emit(EVENTS.ROOM_JOINED, { roomCode, playerId: socket.id, room });
-    console.log(`[room:create] ${roomCode} by "${name}"`);
+    console.log(`[room:create] ${roomCode} by "${name}" rooms=${Array.from(rooms.keys()).join(",")}`);
   });
 
   socket.on(EVENTS.JOIN_ROOM, (payload: JoinRoomPayload) => {
     const name     = (payload?.name ?? "").trim();
     const roomCode = (payload?.roomCode ?? "").trim();
+    console.log(`[room:join] attempt event="${EVENTS.JOIN_ROOM}" payload=${JSON.stringify(payload)} roomCode="${roomCode}" exists=${rooms.has(roomCode)} knownRooms=${Array.from(rooms.keys()).slice(0, 10).join(",") || "(none)"}`);
     if (!name) {
       socket.emit(EVENTS.ROOM_ERROR, { messageKey: "err_name_required", messageText: "Name is required." });
       return;

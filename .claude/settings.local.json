@@ -19,7 +19,12 @@
       "Bash(echo \"exit:$?\")",
       "Bash(pnpm --filter web install)",
       "Bash(npx tsc --noEmit)",
-      "Bash(pnpm --filter server build)"
+      "Bash(pnpm --filter server build)",
+      "Bash(grep -n \"\"\"room:join\"\"\\\\|\"\"room:create\"\"\\\\|JOIN_ROOM\\\\|CREATE_ROOM\" \"/c/Users/Ali Dashti/Documents/Code/unipal-arena/apps/web/dist/assets/index-\"*.js)",
+      "Bash(grep -o '\"\"room:join\"\"\\\\|\"\"room:create\"\"\\\\|room:join\\\\|room:create' \"/c/Users/Ali Dashti/Documents/Code/unipal-arena/apps/web/dist/assets/\"*.js)",
+      "Bash(grep -c \"room:join\" \"/c/Users/Ali Dashti/Documents/Code/unipal-arena/apps/web/dist/assets/\"*.js)",
+      "Bash(grep -o 'localhost:[0-9]*\\\\|location\\\\.origin\\\\|VITE_SERVER' \"/c/Users/Ali Dashti/Documents/Code/unipal-arena/apps/web/dist/assets/\"*.js)",
+      "Bash(grep -o 'localhost\\\\|3001\\\\|origin' \"/c/Users/Ali Dashti/Documents/Code/unipal-arena/apps/web/dist/assets/\"*.js)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Ali Dashti\\Documents\\Code\\unipal-arena",
