@@ -18,7 +18,8 @@
       "Bash(timeout 15 npx vite build --mode development)",
       "Bash(echo \"exit:$?\")",
       "Bash(pnpm --filter web install)",
-      "Bash(npx tsc --noEmit)"
+      "Bash(npx tsc --noEmit)",
+      "Bash(pnpm --filter server build)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Ali Dashti\\Documents\\Code\\unipal-arena",

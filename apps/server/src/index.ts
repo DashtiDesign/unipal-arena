@@ -19,7 +19,9 @@ import {
 } from "@arena/shared";
 import { REGISTRY, nextFromDeck, freshDeck } from "./games/registry";
 
-const PORT = process.env.PORT ?? 3001;
+import path from "path";
+
+const PORT = Number(process.env.PORT) || 3001;
 const MAX_PLAYERS = 12;
 const WIN_SCORE = 10;
 const RESULT_DELAY_MS = 10000;
@@ -28,6 +30,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.get("/health", (_req, res) => res.json({ ok: true }));
+
+if (process.env.NODE_ENV === "production") {
+  const webDist = path.resolve(__dirname, "../../web/dist");
+  app.use(express.static(webDist));
+  app.get("*", (_req, res) => res.sendFile(path.join(webDist, "index.html")));
+}
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" } });
