@@ -109,7 +109,7 @@ const emojiOddOneOut: GameDefinition<State, Public> = {
 
     return {
       outcomeByPlayerId,
-      stats: { oddIdx: s.oddIdx, oddEmoji: s.cells[s.oddIdx], results },
+      stats: { oddIdx: s.oddIdx, oddEmoji: s.cells[s.oddIdx], results, answers: s.answers },
     };
   },
 };

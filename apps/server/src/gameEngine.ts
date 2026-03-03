@@ -83,9 +83,24 @@ function extractMatchMeta(
     case "reaction_green": {
       type RResult = { early: boolean; elapsedMs: number | null };
       const results = stats.results as Record<string, RResult> | undefined;
+      const displayMs = stats.displayMs as Record<string, number> | undefined;
       const a = results?.[aId]; const b = results?.[bId];
-      const fmt = (r: RResult | undefined) => r?.early ? "too early" : r?.elapsedMs != null ? `${(r.elapsedMs / 1000).toFixed(3)}s` : "—";
-      return { scoreSummary: { aValue: fmt(a), bValue: fmt(b), label: "time" } };
+      // scoreSummary uses display-time if available, else server-computed elapsed
+      const fmtDisplay = (id: string, r: RResult | undefined) => {
+        if (r?.early) return "too early";
+        const d = displayMs?.[id];
+        if (d != null) return `${(d / 1000).toFixed(3)}s`;
+        return r?.elapsedMs != null ? `${(r.elapsedMs / 1000).toFixed(3)}s` : "—";
+      };
+      return {
+        scoreSummary: { aValue: fmtDisplay(aId, a), bValue: fmtDisplay(bId, b), label: "time" },
+        // Carry raw displayMs so results page can show ms chip
+        answerDetails: {
+          aAnswer: displayMs?.[aId] ?? null,
+          bAnswer: displayMs?.[bId] ?? null,
+          showAnswers: false, // no "correct answer" for reaction time
+        },
+      };
     }
     case "stop_at_10s": {
       type SResult = { elapsedMs: number | null };
@@ -97,18 +112,28 @@ function extractMatchMeta(
     case "quick_maths": {
       const results = stats.results as Record<string, CRResult> | undefined;
       const answer = stats.answer as number | undefined;
+      const choices = stats.choices as Record<string, number> | undefined;
       const aRes = results?.[aId]; const bRes = results?.[bId];
       const fmt = (r: CRResult | undefined) => r ? (r.correct ? `✓ ${(r.elapsedMs / 1000).toFixed(2)}s` : "✗") : "—";
       return {
         scoreSummary: { aValue: fmt(aRes), bValue: fmt(bRes), label: "answer" },
-        answerDetails: { correctAnswer: answer, showAnswers: true },
+        answerDetails: {
+          correctAnswer: answer,
+          aAnswer: choices?.[aId] ?? null,
+          bAnswer: choices?.[bId] ?? null,
+          showAnswers: true,
+        },
       };
     }
     case "emoji_odd_one_out": {
       const results = stats.results as Record<string, CRResult> | undefined;
       const aRes = results?.[aId]; const bRes = results?.[bId];
       const fmt = (r: CRResult | undefined) => r ? (r.correct ? `✓ ${(r.elapsedMs / 1000).toFixed(2)}s` : "✗") : "—";
-      return { scoreSummary: { aValue: fmt(aRes), bValue: fmt(bRes), label: "answer" } };
+      const oddEmoji = stats.oddEmoji as string | undefined;
+      return {
+        scoreSummary: { aValue: fmt(aRes), bValue: fmt(bRes), label: "answer" },
+        answerDetails: { correctAnswer: oddEmoji, showAnswers: false },
+      };
     }
     case "memory_grid": {
       const results = stats.results as Record<string, CRResult> | undefined;

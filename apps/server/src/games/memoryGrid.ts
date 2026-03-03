@@ -46,8 +46,8 @@ const memoryGrid: GameDefinition<State, Public> = {
   displayName: { en: "Memory Grid", ar: "شبكة الذاكرة" },
   durationMs: 15000,
   instructions: {
-    en: "Memorize the highlighted cells, then tap all 5! First correct wins.",
-    ar: "احفظ الخلايا المضيئة، ثم انقر على جميع الـ5! أول إجابة صحيحة تفوز.",
+    en: "Memorize the highlighted cells, then tap all 5! Correct beats wrong — ties broken by speed.",
+    ar: "احفظ الخلايا المضيئة، ثم انقر على جميع الـ5! الصواب يتفوق على الخطأ — التعادل يُكسر بالسرعة.",
   },
   init(playerIds) {
     const indices = Array.from({ length: GRID_SIZE }, (_, i) => i);
@@ -103,11 +103,9 @@ const memoryGrid: GameDefinition<State, Public> = {
     };
   },
   isResolved(s) {
-    // Resolve as soon as either player has submitted all 5 cells and they are correct
-    // (first correct wins), OR both have submitted.
-    if (s.playerIds.every((id) => isDone(s, id))) return true;
-    // Early resolve if one player got all cells correct
-    return s.playerIds.some((id) => isDone(s, id) && isCorrect(s, id));
+    // Resolve only when both players have submitted all 5 cells.
+    // Timer expiry is handled by the tick loop — no early-resolve here.
+    return s.playerIds.every((id) => isDone(s, id));
   },
   resolve(s) {
     const outcomeByPlayerId: Record<string, number> = {};

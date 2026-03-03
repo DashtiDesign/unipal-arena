@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { GameComponentProps } from "./types";
-import { Chip } from "@heroui/react";
 
 interface State {
   triggerAt: number;
@@ -9,10 +8,12 @@ interface State {
   earlyTap: Record<string, boolean>;
 }
 
-export default function ReactionGreen({ publicState, playerId, opponentId, onInput, remainingMs }: GameComponentProps) {
+export default function ReactionGreen({ publicState, playerId, opponentId, onInput }: GameComponentProps) {
   const s = publicState as State;
   const [isGreen, setIsGreen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Records the performance.now() timestamp exactly when the UI turns green
+  const greenShownAtPerfRef = useRef<number | null>(null);
 
   const IReacted   = s.reacted[playerId]    ?? false;
   const IWasEarly  = s.earlyTap[playerId]   ?? false;
@@ -21,16 +22,28 @@ export default function ReactionGreen({ publicState, playerId, opponentId, onInp
 
   useEffect(() => {
     const delay = s.triggerAt - Date.now();
-    if (delay <= 0) { setIsGreen(true); return; }
-    timerRef.current = setTimeout(() => setIsGreen(true), delay);
+    if (delay <= 0) {
+      greenShownAtPerfRef.current = performance.now();
+      setIsGreen(true);
+      return;
+    }
+    timerRef.current = setTimeout(() => {
+      greenShownAtPerfRef.current = performance.now();
+      setIsGreen(true);
+    }, delay);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [s.triggerAt]);
 
   function handleTap(e: React.PointerEvent) {
     e.preventDefault();
     if (IReacted || IWasEarly) return;
+    const tapAtPerf = performance.now();
+    // Compute display-only reaction time from client-perceived green moment
+    const displayReactionMs = greenShownAtPerfRef.current != null
+      ? Math.round(tapAtPerf - greenShownAtPerfRef.current)
+      : undefined;
     // Send clientNowMs — server applies clock offset to compute eventServerTime
-    onInput({ clientNowMs: Date.now() });
+    onInput({ clientNowMs: Date.now(), displayReactionMs });
   }
 
   let label: string;
@@ -60,10 +73,7 @@ export default function ReactionGreen({ publicState, playerId, opponentId, onInp
 
   return (
     <div className="flex flex-col items-center gap-4 py-6 w-full select-none">
-      <div className="flex items-center justify-between w-full px-2">
-        <p className="text-base font-semibold text-center min-h-[1.5rem]">{statusMsg}</p>
-        <Chip size="sm" color="default" variant="secondary">{Math.ceil(remainingMs / 1000)}s</Chip>
-      </div>
+      <p className="text-base font-semibold text-center min-h-[1.5rem]">{statusMsg}</p>
 
       <button
         className={`w-full rounded-2xl flex items-center justify-center text-5xl font-bold transition-all active:scale-95 ${bgClass}`}
@@ -73,7 +83,7 @@ export default function ReactionGreen({ publicState, playerId, opponentId, onInp
         {label}
       </button>
 
-      {oppStatus && <p className="text-xs text-(--muted) text-center">{oppStatus}</p>}
+      {oppStatus && <p className="text-sm text-(--muted) text-center">{oppStatus}</p>}
     </div>
   );
 }

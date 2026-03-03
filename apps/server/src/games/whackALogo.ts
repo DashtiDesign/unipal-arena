@@ -1,17 +1,37 @@
 import { GameDefinition } from "@arena/shared";
 
-const LOGO_SIZE = 80; // px — matches client logo size
-const AREA_W = 320;   // safe play area width (client uses same constant)
-const AREA_H = 340;   // safe play area height
-const MAX_LOGOS = 1;  // one logo at a time per player — simpler, less cluttered
-const MAX_BOMBS = 3;  // max bomb appearances per player per match
-const BOMB_CHANCE = 1 / 8; // reduced bomb frequency
-const BOMB_LIFETIME_MS = 2500; // slightly longer so players can see it
-const MIN_DIST = LOGO_SIZE + 16; // slightly more space between targets
-const MAX_PLACEMENT_TRIES = 20;
+// ── Grid layout constants ─────────────────────────────────────────────────────
+// We divide the play area into a fixed grid of COLS×ROWS slots.
+// Each slot has a deterministic center; logos/bombs are always placed in a slot.
+// This prevents any position changes when a bomb despawns.
+
+const LOGO_SIZE = 80;
+const AREA_W = 320;
+const AREA_H = 340;
+const COLS = 3;
+const ROWS = 3;
+const TOTAL_SLOTS = COLS * ROWS; // 9 slots
+
+const MAX_LOGOS = 2;   // logos on the field at once per player
+const MAX_BOMBS = 4;   // max bomb appearances per player per match
+const BOMB_CHANCE = 1 / 6;
+const BOMB_LIFETIME_MS = 2500;
+
+/** Pre-computed slot top-left positions (same formula on client). */
+function slotPosition(slotIdx: number): { x: number; y: number } {
+  const col = slotIdx % COLS;
+  const row = Math.floor(slotIdx / COLS);
+  const cellW = (AREA_W - LOGO_SIZE) / (COLS - 1);
+  const cellH = (AREA_H - LOGO_SIZE) / (ROWS - 1);
+  return {
+    x: Math.round(col * cellW),
+    y: Math.round(row * cellH),
+  };
+}
 
 interface Target {
   id: string;
+  slotIdx: number; // which grid slot this target occupies
   x: number;
   y: number;
   isBomb: boolean;
@@ -19,7 +39,7 @@ interface Target {
 }
 
 interface PlayerSlot {
-  targets: Target[];  // all active targets (logos + at most 1 bomb)
+  targets: Target[];
   bombsShown: number;
 }
 
@@ -27,6 +47,7 @@ interface State {
   playerIds: string[];
   slots: Record<string, PlayerSlot>;
   hits: Record<string, number>;
+  idCounter: number; // deterministic incrementing ID counter
 }
 
 interface PublicTarget {
@@ -41,62 +62,77 @@ interface Public {
   hits: Record<string, number>;
 }
 
-let _counter = 0;
-function nextId(): string {
-  return `t${Date.now()}-${_counter++}`;
+function makeId(counter: number): string {
+  return `t${counter}`;
 }
 
-/** Try to place a new target that doesn't overlap existing ones. Falls back to random after MAX_PLACEMENT_TRIES. */
-function placeTarget(existing: Target[], isBomb: boolean): Target {
-  const now = Date.now();
-  for (let i = 0; i < MAX_PLACEMENT_TRIES; i++) {
-    const x = Math.floor(Math.random() * (AREA_W - LOGO_SIZE));
-    const y = Math.floor(Math.random() * (AREA_H - LOGO_SIZE));
-    const cx = x + LOGO_SIZE / 2;
-    const cy = y + LOGO_SIZE / 2;
-    const overlaps = existing.some((t) => {
-      const dx = cx - (t.x + LOGO_SIZE / 2);
-      const dy = cy - (t.y + LOGO_SIZE / 2);
-      return Math.sqrt(dx * dx + dy * dy) < MIN_DIST;
-    });
-    if (!overlaps) return { id: nextId(), x, y, isBomb, spawnedAt: now };
+/** Pick `count` random distinct slot indices from the full set, avoiding `occupied`. */
+function pickFreeSlots(occupied: Set<number>, count: number): number[] {
+  const free: number[] = [];
+  for (let i = 0; i < TOTAL_SLOTS; i++) {
+    if (!occupied.has(i)) free.push(i);
   }
-  return {
-    id: nextId(),
-    x: Math.floor(Math.random() * (AREA_W - LOGO_SIZE)),
-    y: Math.floor(Math.random() * (AREA_H - LOGO_SIZE)),
-    isBomb,
-    spawnedAt: now,
-  };
+  // Fisher-Yates shuffle on free
+  for (let i = free.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [free[i], free[j]] = [free[j], free[i]];
+  }
+  return free.slice(0, count);
 }
 
-/** Build the initial slot: MAX_LOGOS logos, no bomb on first spawn. */
-function initSlot(): PlayerSlot {
+function initSlot(idCounter: number): { playerSlot: PlayerSlot; nextCounter: number } {
+  const freeSlots = pickFreeSlots(new Set<number>(), MAX_LOGOS);
   const targets: Target[] = [];
-  for (let i = 0; i < MAX_LOGOS; i++) {
-    targets.push(placeTarget(targets, false));
+  let ctr = idCounter;
+  const now = Date.now();
+  for (const si of freeSlots) {
+    const pos = slotPosition(si);
+    targets.push({ id: makeId(ctr++), slotIdx: si, x: pos.x, y: pos.y, isBomb: false, spawnedAt: now });
   }
-  return { targets, bombsShown: 0 };
+  return { playerSlot: { targets, bombsShown: 0 }, nextCounter: ctr };
 }
 
-/** After a logo is tapped: replace it with a new logo (and maybe add a bomb if none active). */
-function spawnLogo(slot: PlayerSlot): PlayerSlot {
-  const hasBomb = slot.targets.some((t) => t.isBomb);
-  const canShowBomb = !hasBomb && slot.bombsShown < MAX_BOMBS;
+/**
+ * After a logo is tapped: spawn a replacement logo in a free slot.
+ * Optionally also spawn a bomb if conditions are met.
+ * `remaining` is the target list AFTER the tapped logo was removed.
+ */
+function spawnAfterTap(
+  remaining: Target[],
+  bombsShown: number,
+  idCounter: number,
+): { playerSlot: PlayerSlot; nextCounter: number } {
+  const now = Date.now();
+  const occupied = new Set(remaining.map((t) => t.slotIdx));
+  const hasBomb = remaining.some((t) => t.isBomb);
+  const canShowBomb = !hasBomb && bombsShown < MAX_BOMBS;
   const showBomb = canShowBomb && Math.random() < BOMB_CHANCE;
-  const newTargets = [...slot.targets];
-  newTargets.push(placeTarget(newTargets, false));
-  if (showBomb) {
-    newTargets.push(placeTarget(newTargets, true));
+  let ctr = idCounter;
+
+  const neededSlots = showBomb ? 2 : 1;
+  const freeSlots = pickFreeSlots(occupied, neededSlots);
+
+  const newTargets = [...remaining];
+  if (freeSlots.length >= 1) {
+    const pos = slotPosition(freeSlots[0]);
+    newTargets.push({ id: makeId(ctr++), slotIdx: freeSlots[0], x: pos.x, y: pos.y, isBomb: false, spawnedAt: now });
   }
+  const bombActuallySpawned = showBomb && freeSlots.length >= 2;
+  if (bombActuallySpawned) {
+    const pos = slotPosition(freeSlots[1]);
+    newTargets.push({ id: makeId(ctr++), slotIdx: freeSlots[1], x: pos.x, y: pos.y, isBomb: true, spawnedAt: now });
+  }
+
   return {
-    targets: newTargets,
-    bombsShown: slot.bombsShown + (showBomb ? 1 : 0),
+    playerSlot: { targets: newTargets, bombsShown: bombsShown + (bombActuallySpawned ? 1 : 0) },
+    nextCounter: ctr,
   };
 }
 
-/** Expire any bomb whose BOMB_LIFETIME_MS has elapsed.
- *  Returns the slot unchanged if nothing expired, or a new slot with bomb removed and a fresh replacement placed.
+/**
+ * Expire any bomb whose BOMB_LIFETIME_MS has elapsed.
+ * IMPORTANT: When a bomb expires, we ONLY remove it — we do NOT spawn a replacement.
+ * This ensures existing logo positions never change on bomb despawn.
  */
 export function expireBombs(slot: PlayerSlot): { slot: PlayerSlot; expired: boolean } {
   const now = Date.now();
@@ -104,11 +140,10 @@ export function expireBombs(slot: PlayerSlot): { slot: PlayerSlot; expired: bool
   if (!liveBomb || now - liveBomb.spawnedAt < BOMB_LIFETIME_MS) {
     return { slot, expired: false };
   }
-  // Bomb has expired — remove it and place a new logo in its position
+  // Bomb has expired — just remove it, no replacement (logo positions stay stable)
   const withoutBomb = slot.targets.filter((t) => !t.isBomb);
-  const newLogo = placeTarget(withoutBomb, false);
   return {
-    slot: { ...slot, targets: [...withoutBomb, newLogo] },
+    slot: { ...slot, targets: withoutBomb },
     expired: true,
   };
 }
@@ -131,17 +166,20 @@ const whackALogo: GameDefinition<State, Public> = {
   },
   init(playerIds) {
     const slots: Record<string, PlayerSlot> = {};
+    let counter = 0;
     for (const id of playerIds) {
-      slots[id] = initSlot();
+      const { playerSlot, nextCounter } = initSlot(counter);
+      slots[id] = playerSlot;
+      counter = nextCounter;
     }
     return {
       playerIds,
       slots,
       hits: Object.fromEntries(playerIds.map((id) => [id, 0])),
+      idCounter: counter,
     };
   },
   publicState(s) {
-    // Strip spawnedAt before sending to clients; also expire any bombs whose time has passed
     return {
       slots: Object.fromEntries(
         s.playerIds.map((id) => {
@@ -163,12 +201,16 @@ const whackALogo: GameDefinition<State, Public> = {
     const { slot: freshSlot } = expireBombs(slot);
 
     const tIdx = freshSlot.targets.findIndex((t) => t.id === targetId);
-    if (tIdx === -1) return { ...s, slots: { ...s.slots, [playerId]: freshSlot } }; // stale tap but apply expiry
+    if (tIdx === -1) {
+      // Stale tap — apply expiry only, no position changes
+      return { ...s, slots: { ...s.slots, [playerId]: freshSlot } };
+    }
 
     const tapped = freshSlot.targets[tIdx];
     const remaining = freshSlot.targets.filter((_, i) => i !== tIdx);
 
     if (tapped.isBomb) {
+      // Bomb tapped: −2 pts, remove bomb only (no replacement spawned here)
       return {
         ...s,
         hits: { ...s.hits, [playerId]: (s.hits[playerId] ?? 0) - 2 },
@@ -176,13 +218,17 @@ const whackALogo: GameDefinition<State, Public> = {
       };
     }
 
-    // Logo tapped: +1 pt, remove this logo and spawn a replacement
-    const afterRemove: PlayerSlot = { ...freshSlot, targets: remaining };
-    const newSlot = spawnLogo(afterRemove);
+    // Logo tapped: +1 pt, spawn replacement in a free slot
+    const { playerSlot: newSlot, nextCounter } = spawnAfterTap(
+      remaining,
+      freshSlot.bombsShown,
+      s.idCounter,
+    );
     return {
       ...s,
       hits: { ...s.hits, [playerId]: (s.hits[playerId] ?? 0) + 1 },
       slots: { ...s.slots, [playerId]: newSlot },
+      idCounter: nextCounter,
     };
   },
   resolve(s) {

@@ -135,7 +135,7 @@ const quickMaths: GameDefinition<State, Public> = {
       }
     }
 
-    return { outcomeByPlayerId, stats: { answer: s.answer, results } };
+    return { outcomeByPlayerId, stats: { answer: s.answer, results, choices: s.choices } };
   },
 };
 

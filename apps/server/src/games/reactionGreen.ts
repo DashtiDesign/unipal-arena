@@ -12,6 +12,8 @@ interface State {
   endsAt: number;       // absolute epoch ms when round ends (for client display)
   reactions: Record<string, number>; // playerId -> epoch ms of tap (server-authoritative)
   earlyTap: Record<string, boolean>; // playerId -> tapped before green
+  // Display-only client-measured reaction times (not used for winner logic)
+  displayMs: Record<string, number>;
 }
 
 interface Public {
@@ -23,7 +25,7 @@ interface Public {
 
 const reactionGreen: GameDefinition<State, Public> = {
   id: "reaction_green",
-  displayName: { en: "Reaction Green", ar: "ردة الفعل الخضراء" },
+  displayName: { en: "Reaction Time", ar: "وقت ردّة الفعل" },
   durationMs: ROUND_DURATION_MS,
   instructions: {
     en: "Tap when it turns GREEN. Tapping too early = instant loss!",
@@ -38,6 +40,7 @@ const reactionGreen: GameDefinition<State, Public> = {
       endsAt: now + ROUND_DURATION_MS,
       reactions: {},
       earlyTap: {},
+      displayMs: {},
     };
   },
   publicState(s) {
@@ -52,17 +55,26 @@ const reactionGreen: GameDefinition<State, Public> = {
     if (playerId in s.reactions || playerId in s.earlyTap) return s;
 
     // Use clock-offset-corrected eventServerTime if provided (injected by GAME_INPUT handler).
-    // This prevents "too fast" false positives caused by network latency.
-    const p = payload as { eventServerTime?: number };
+    const p = payload as { eventServerTime?: number; displayReactionMs?: number };
     const tapAt = typeof p.eventServerTime === "number" ? p.eventServerTime : Date.now();
 
-    console.log(`[reaction_green] playerId=${playerId} tapAt=${tapAt} triggerAt=${s.triggerAt} delta=${tapAt - s.triggerAt}ms`);
+    if (process.env.DEBUG_REACTION === "1") {
+      console.log(`[reaction_green] playerId=${playerId} tapAt=${tapAt} triggerAt=${s.triggerAt} delta=${tapAt - s.triggerAt}ms displayMs=${p.displayReactionMs ?? "n/a"}`);
+    }
 
     if (tapAt < s.triggerAt) {
-      console.log(`[reaction_green] EARLY TAP playerId=${playerId} early by ${s.triggerAt - tapAt}ms`);
+      if (process.env.DEBUG_REACTION === "1") {
+        console.log(`[reaction_green] EARLY TAP playerId=${playerId} early by ${s.triggerAt - tapAt}ms`);
+      }
       return { ...s, earlyTap: { ...s.earlyTap, [playerId]: true } };
     }
-    return { ...s, reactions: { ...s.reactions, [playerId]: tapAt } };
+
+    // Capture client-reported display time (display-only, not used for winner)
+    const newDisplayMs = typeof p.displayReactionMs === "number" && p.displayReactionMs >= 0
+      ? { ...s.displayMs, [playerId]: Math.round(p.displayReactionMs) }
+      : s.displayMs;
+
+    return { ...s, reactions: { ...s.reactions, [playerId]: tapAt }, displayMs: newDisplayMs };
   },
   isResolved(s) {
     if (Object.keys(s.earlyTap).length > 0) return true;
@@ -113,7 +125,8 @@ const reactionGreen: GameDefinition<State, Public> = {
       [a]: { early: aEarly, elapsedMs: aTime != null ? aTime - s.triggerAt : null },
       [b]: { early: bEarly, elapsedMs: bTime != null ? bTime - s.triggerAt : null },
     };
-    return { outcomeByPlayerId, stats: { results } };
+    // displayMs is echoed back for results-page display; not used for winner logic
+    return { outcomeByPlayerId, stats: { results, displayMs: s.displayMs } };
   },
 };
 

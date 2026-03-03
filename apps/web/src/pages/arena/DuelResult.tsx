@@ -1,6 +1,6 @@
 import { T } from "../../i18n";
 import type { LeaderboardEntry, MatchResultEntry } from "@arena/shared";
-import { Card, Chip } from "@heroui/react";
+import { Chip } from "@heroui/react";
 
 interface ResultData {
   winnerId: string | null;
@@ -30,10 +30,10 @@ interface Row { label: string; value: string; winner: boolean }
 interface BreakdownCard { rows: Row[]; reason: string; answerBlock?: React.ReactNode }
 
 function buildBreakdown(match: MatchResultEntry, myId: string): BreakdownCard | null {
-  const { gameDefId, stats, aId, aName, bId, bName, winnerId, isDraw } = match;
+  const { gameDefId, stats, aId, aName, bId, bName, winnerId, isDraw, answerDetails } = match;
   const amA = myId === aId;
-  const myName   = amA ? aName : bName;
-  const oppName  = amA ? bName : aName;
+  const myName    = amA ? aName : bName;
+  const oppName   = amA ? bName : aName;
   const myIdUsed  = amA ? aId  : bId;
   const oppIdUsed = amA ? bId  : aId;
   const iWon   = winnerId === myIdUsed;
@@ -102,7 +102,34 @@ function buildBreakdown(match: MatchResultEntry, myId: string): BreakdownCard | 
       else if (iWon && opp?.elapsedMs == null) { reason = "Opponent did not respond"; }
       else if (oppWon && mine?.elapsedMs == null) { reason = "You did not respond"; }
       else { reason = iWon ? `${myName} reacted faster` : `${oppName} reacted faster`; }
-      return { rows: [{ label: myName, value: fmtR(mine), winner: iWon && !isDraw }, { label: oppName, value: fmtR(opp), winner: oppWon && !isDraw }], reason };
+
+      // Reaction time display chips from client-measured displayMs
+      const myDisplayMs = amA ? answerDetails?.aAnswer : answerDetails?.bAnswer;
+      const oppDisplayMs = amA ? answerDetails?.bAnswer : answerDetails?.aAnswer;
+      const fmtChip = (v: string | number | null | undefined) => {
+        if (v == null) return null;
+        const n = Number(v);
+        if (isNaN(n) || n < 0) return null;
+        return n >= 1000 ? `${(n / 1000).toFixed(3)}s` : `${n} ms`;
+      };
+      const myChip = mine?.early ? null : fmtChip(myDisplayMs);
+      const oppChip = opp?.early ? null : fmtChip(oppDisplayMs);
+      const reactionBlock = (myChip || oppChip) ? (
+        <div className="mt-3 flex gap-2 flex-wrap">
+          {myChip && (
+            <Chip color={iWon ? "success" : "default"} variant="soft" size="md">
+              {myName}: {myChip}
+            </Chip>
+          )}
+          {oppChip && (
+            <Chip color={oppWon ? "success" : "default"} variant="soft" size="md">
+              {oppName}: {oppChip}
+            </Chip>
+          )}
+        </div>
+      ) : undefined;
+
+      return { rows: [{ label: myName, value: fmtR(mine), winner: iWon && !isDraw }, { label: oppName, value: fmtR(opp), winner: oppWon && !isDraw }], reason, answerBlock: reactionBlock };
     }
 
     case "quick_maths": {
@@ -114,9 +141,18 @@ function buildBreakdown(match: MatchResultEntry, myId: string): BreakdownCard | 
       if (isDraw) { reason = (!mine?.correct && !opp?.correct) ? "Both answers wrong — draw" : "Same speed — draw"; }
       else if (iWon) { reason = !opp?.correct ? "Opponent answered wrong" : `${myName} answered faster`; }
       else { reason = !mine?.correct ? "Your answer was wrong" : `${oppName} answered faster`; }
-      const answerBlock = answer != null ? (
-        <div className="mt-2 text-xs text-(--success) font-semibold">Correct answer: {answer}</div>
-      ) : undefined;
+
+      const myChoice = amA ? answerDetails?.aAnswer : answerDetails?.bAnswer;
+      const answerBlock = (
+        <div className="mt-3 flex flex-col gap-1">
+          {!mine?.correct && myChoice != null && (
+            <span className="text-(--danger) font-semibold text-base">Your answer: {myChoice}</span>
+          )}
+          {answer != null && (
+            <span className="text-(--success) font-semibold text-base">Correct answer: {answer}</span>
+          )}
+        </div>
+      );
       return { rows: [{ label: myName, value: fmtRow(mine), winner: iWon && !isDraw }, { label: oppName, value: fmtRow(opp), winner: oppWon && !isDraw }], reason, answerBlock };
     }
 
@@ -128,7 +164,13 @@ function buildBreakdown(match: MatchResultEntry, myId: string): BreakdownCard | 
       if (isDraw) { reason = (!mine?.correct && !opp?.correct) ? "Both answers wrong — draw" : "Same speed — draw"; }
       else if (iWon) { reason = !opp?.correct ? "Opponent selected wrong" : `${myName} found it faster`; }
       else { reason = !mine?.correct ? "You selected wrong" : `${oppName} found it faster`; }
-      return { rows: [{ label: myName, value: fmtRow(mine), winner: iWon && !isDraw }, { label: oppName, value: fmtRow(opp), winner: oppWon && !isDraw }], reason };
+      const oddEmoji = answerDetails?.correctAnswer;
+      const answerBlock = !mine?.correct && oddEmoji != null ? (
+        <div className="mt-3">
+          <span className="text-(--success) font-semibold text-base">The odd one was: {oddEmoji}</span>
+        </div>
+      ) : undefined;
+      return { rows: [{ label: myName, value: fmtRow(mine), winner: iWon && !isDraw }, { label: oppName, value: fmtRow(opp), winner: oppWon && !isDraw }], reason, answerBlock };
     }
 
     case "memory_grid": {
@@ -169,7 +211,9 @@ function buildBreakdown(match: MatchResultEntry, myId: string): BreakdownCard | 
         ? "Both guessed in the same round — draw"
         : `${winnerName} guessed the number${secret != null ? ` (${secret})` : ""}${rounds != null ? ` in ${rounds} round${rounds !== 1 ? "s" : ""}` : ""}`;
       const answerBlock = secret != null ? (
-        <div className="mt-2 text-xs text-(--success) font-semibold">Secret number: {secret}</div>
+        <div className="mt-3">
+          <span className="text-(--success) font-semibold text-base">Secret number: {secret}</span>
+        </div>
       ) : undefined;
       return {
         rows: [{ label: myName, value: iWon ? "✓ Guessed it!" : "—", winner: iWon && !isDraw }, { label: oppName, value: oppWon ? "✓ Guessed it!" : "—", winner: oppWon && !isDraw }],
@@ -204,20 +248,15 @@ function MatchOneLine({ match }: { match: MatchResultEntry }) {
     if (aValue != null && bValue != null) scoreStr = ` (${aValue}–${bValue})`;
   }
 
-  let answerStr = "";
-  if (match.answerDetails?.showAnswers && match.answerDetails.correctAnswer != null) {
-    answerStr = ` · ✓ ${match.answerDetails.correctAnswer}`;
-  }
-
   return (
-    <div className="flex items-center justify-between text-sm py-1.5 gap-2 flex-wrap">
-      <span className="font-medium">
+    <div className="flex items-center justify-between py-2 gap-2 flex-wrap">
+      <span className="text-base font-medium">
         {match.aName}
         <span className="text-(--muted) mx-1 font-normal">vs</span>
         {match.bName}
       </span>
-      <span className="text-(--muted) shrink-0 text-xs tabular-nums">
-        {outcomeLabel}{scoreStr}{answerStr}
+      <span className="text-(--muted) shrink-0 text-base tabular-nums">
+        {outcomeLabel}{scoreStr}
       </span>
     </div>
   );
@@ -229,11 +268,9 @@ export default function DuelResult({ t, playerId, benchedId, result, onLeave: _o
   const { deltaScores, leaderboard, matches } = result;
   const isBenched = benchedId === playerId;
 
-  // Names come from MatchResultEntry (baked in server-side at resolve time)
   const myMatch    = matches.find((m) => m.aId === playerId || m.bId === playerId) ?? null;
   const otherMatches = matches.filter((m) => m !== myMatch);
 
-  // Headline
   let headline: string;
   let headlineEmoji: string;
   if (isBenched) {
@@ -254,92 +291,83 @@ export default function DuelResult({ t, playerId, benchedId, result, onLeave: _o
 
   const breakdown = (!isBenched && myMatch) ? buildBreakdown(myMatch, playerId) : null;
 
-  // Benched players see all matches; active duelists see other matches only
   const otherToShow = isBenched ? matches : otherMatches;
 
   return (
-    <main className="flex flex-col items-center px-4 py-8 gap-4 max-w-sm mx-auto">
+    <main className="flex flex-col items-center px-4 py-8 gap-6 max-w-sm mx-auto">
       {/* Headline */}
-      <Card className="w-full">
-        <Card.Content className="flex flex-col items-center gap-2 py-8 px-4">
-          <p className="text-5xl">{headlineEmoji}</p>
-          <p className="text-2xl font-bold text-center">{headline}</p>
-          {deltaLabel && <Chip size="lg" color="success" variant="soft">{deltaLabel}</Chip>}
-        </Card.Content>
-      </Card>
+      <div className="flex flex-col items-center gap-3 py-2 w-full text-center">
+        <p className="text-5xl">{headlineEmoji}</p>
+        <p className="text-3xl font-bold">{headline}</p>
+        {deltaLabel && <Chip size="lg" color="success" variant="soft" className="text-base px-4">{deltaLabel}</Chip>}
+      </div>
 
       {/* Your match breakdown (active duelists only) */}
       {!isBenched && myMatch && breakdown && (
-        <Card className="w-full">
-          <Card.Content className="flex flex-col gap-3 py-5 px-4">
-            <h3 className="font-semibold text-(--muted) uppercase text-xs tracking-widest">Your match</h3>
-            <p className="text-sm font-semibold text-center">
-              {myMatch.aName}
-              <span className="text-(--muted) font-normal mx-2">vs</span>
-              {myMatch.bName}
-            </p>
-            <div className="flex flex-col gap-2">
-              {breakdown.rows.map((row) => (
-                <div
-                  key={row.label}
-                  className={[
-                    "flex items-center justify-between rounded-xl px-4 py-3",
-                    row.winner ? "bg-(--success)/15 border border-(--success)/30" : "bg-(--surface-secondary)",
-                  ].join(" ")}
-                >
-                  <span className={`font-semibold text-sm truncate mr-2 ${row.winner ? "text-(--success)" : ""}`}>
-                    {row.label}{row.winner && " 🏆"}
-                  </span>
-                  <span className={`text-sm tabular-nums shrink-0 ${row.winner ? "font-bold text-(--success)" : "text-(--muted)"}`}>
-                    {row.value}
-                  </span>
-                </div>
-              ))}
-            </div>
-            {breakdown.answerBlock}
-            <p className="text-xs text-(--muted) text-center pt-1">{breakdown.reason}</p>
-          </Card.Content>
-        </Card>
+        <div className="w-full flex flex-col gap-3">
+          <p className="text-sm font-semibold text-(--muted) uppercase tracking-widest">Your match</p>
+          <p className="text-lg font-semibold text-center">
+            {myMatch.aName}
+            <span className="text-(--muted) font-normal mx-2">vs</span>
+            {myMatch.bName}
+          </p>
+          <div className="flex flex-col gap-2">
+            {breakdown.rows.map((row) => (
+              <div
+                key={row.label}
+                className={[
+                  "flex items-center justify-between rounded-xl px-4 py-3",
+                  row.winner ? "bg-(--success)/15 border border-(--success)/30" : "bg-(--surface-secondary)",
+                ].join(" ")}
+              >
+                <span className={`font-semibold text-base truncate mr-2 ${row.winner ? "text-(--success)" : ""}`}>
+                  {row.label}{row.winner && " 🏆"}
+                </span>
+                <span className={`text-base tabular-nums shrink-0 ${row.winner ? "font-bold text-(--success)" : "text-(--muted)"}`}>
+                  {row.value}
+                </span>
+              </div>
+            ))}
+          </div>
+          {breakdown.answerBlock}
+          <p className="text-base text-(--muted) text-center">{breakdown.reason}</p>
+        </div>
       )}
 
       {/* Other matches (or all matches if benched) */}
       {otherToShow.length > 0 && (
-        <Card className="w-full">
-          <Card.Content className="flex flex-col gap-0 py-4 px-4">
-            <h3 className="font-semibold text-(--muted) uppercase text-xs tracking-widest mb-2">
-              {isBenched ? "All matches" : "Other matches"}
-            </h3>
-            <div className="flex flex-col divide-y divide-(--border)">
-              {otherToShow.map((m) => (
-                <MatchOneLine key={`${m.aId}-${m.bId}`} match={m} />
-              ))}
-            </div>
-          </Card.Content>
-        </Card>
+        <div className="w-full flex flex-col gap-2">
+          <p className="text-sm font-semibold text-(--muted) uppercase tracking-widest">
+            {isBenched ? "All matches" : "Other matches"}
+          </p>
+          <div className="flex flex-col divide-y divide-(--border)">
+            {otherToShow.map((m) => (
+              <MatchOneLine key={`${m.aId}-${m.bId}`} match={m} />
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Leaderboard */}
-      <Card className="w-full">
-        <Card.Content className="flex flex-col gap-2 py-4 px-4">
-          <h3 className="font-semibold text-(--muted) uppercase text-xs tracking-widest">{t.players}</h3>
-          <ul className="flex flex-col gap-1">
-            {leaderboard.map((entry, i) => (
-              <li key={entry.id} className="flex justify-between items-center text-sm">
-                <span className="flex items-center gap-2">
-                  <span className="text-(--muted) w-4">{i + 1}.</span>
-                  <span className={entry.id === playerId ? "font-bold" : ""}>{entry.name}</span>
-                  {(deltaScores[entry.id] ?? 0) > 0 && (
-                    <span className="text-(--success) text-xs">+{deltaScores[entry.id]}</span>
-                  )}
-                </span>
-                <span className="tabular-nums">{entry.score} {t.pts}</span>
-              </li>
-            ))}
-          </ul>
-        </Card.Content>
-      </Card>
+      <div className="w-full flex flex-col gap-2">
+        <p className="text-sm font-semibold text-(--muted) uppercase tracking-widest">{t.players}</p>
+        <ul className="flex flex-col gap-2">
+          {leaderboard.map((entry, i) => (
+            <li key={entry.id} className="flex justify-between items-center text-base">
+              <span className="flex items-center gap-2">
+                <span className="text-(--muted) w-5">{i + 1}.</span>
+                <span className={entry.id === playerId ? "font-bold" : ""}>{entry.name}</span>
+                {(deltaScores[entry.id] ?? 0) > 0 && (
+                  <span className="text-(--success) text-sm font-semibold">+{deltaScores[entry.id]}</span>
+                )}
+              </span>
+              <span className="tabular-nums font-semibold">{entry.score} {t.pts}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
 
-      <p className="text-xs text-(--muted)">{t.nextDuelIn}</p>
+      <p className="text-base text-(--muted)">{t.nextDuelIn}</p>
     </main>
   );
 }

@@ -83,8 +83,8 @@ export default function HigherLower({
     setInput("");
   }
 
-  // Show at most 3 most-recent hints (newest at top)
-  const visibleHints = [...hints].reverse().slice(0, 3);
+  // Show last 5 hints, bottom = latest (oldest first, newest at bottom, no scroll)
+  const visibleHints = hints.slice(-5);
 
   return (
     <div className="flex flex-col items-center gap-4 py-4 w-full relative">
