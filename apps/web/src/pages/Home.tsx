@@ -225,7 +225,7 @@ export default function Home({ t, onJoined }: Props) {
           <Input
             type="text"
             fullWidth
-            size="lg"
+            className="h-12"
             value={playerName}
             autoFocus
             onChange={(e) => setPlayerName(e.target.value)}
@@ -259,8 +259,7 @@ export default function Home({ t, onJoined }: Props) {
           pattern="[0-9]*"
           maxLength={4}
           fullWidth
-          size="lg"
-          className="tracking-widest text-center text-2xl font-mono"
+          className="h-12 tracking-widest text-center text-2xl font-mono"
           value={roomCode}
           autoFocus
           onChange={(e) => setRoomCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
@@ -272,7 +271,7 @@ export default function Home({ t, onJoined }: Props) {
         <Input
           type="text"
           fullWidth
-          size="lg"
+          className="h-12"
           value={playerName}
           onChange={(e) => setPlayerName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleJoin()}

@@ -207,24 +207,30 @@ export default function Lobby({ t, lang, session, onSessionUpdate, onLeave }: Pr
 
         <Card className="w-full">
           <Card.Content className="flex flex-col gap-3 p-4">
-            <h3 className="font-semibold text-(--muted) uppercase text-xs tracking-widest">
+            <h3 className="font-semibold text-(--muted) uppercase text-sm tracking-widest">
               {t.players} ({room.players.length}/12)
             </h3>
-            <ul className="flex flex-col gap-2">
+            <ul className="flex flex-col gap-1">
               {room.players.map((player) => {
-                const isMe   = player.id === playerId;
                 const isHost = player.id === room.hostId;
                 return (
-                  <li key={player.id} className="flex items-center justify-between gap-2 py-1">
+                  <li key={player.id} className="flex items-center justify-between gap-3 py-2">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${player.isReady ? "bg-(--success)" : "bg-(--default)"}`} />
-                      <span className="truncate font-medium">{player.name}</span>
-                      {isMe   && <Chip size="sm" variant="secondary" color="default">{t.youLabel}</Chip>}
-                      {isHost && <Chip size="sm" variant="primary" color="accent">{t.hostLabel}</Chip>}
+                      <span className="truncate text-base font-semibold">{player.name}</span>
+                      {isHost && (
+                        <Chip size="sm" variant="primary" color="accent" className="shrink-0">
+                          {t.hostLabel}
+                        </Chip>
+                      )}
                     </div>
-                    <span className={`text-xs shrink-0 ${player.isReady ? "text-(--success)" : "text-(--muted)"}`}>
+                    <Chip
+                      size="sm"
+                      variant={player.isReady ? "primary" : "secondary"}
+                      color={player.isReady ? "success" : "default"}
+                      className="shrink-0"
+                    >
                       {player.isReady ? t.ready : t.notReady}
-                    </span>
+                    </Chip>
                   </li>
                 );
               })}

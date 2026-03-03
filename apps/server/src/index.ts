@@ -338,7 +338,7 @@ io.on("connection", (socket) => {
     socketRooms.set(socket.id, roomCode);
     socket.emit(EVENTS.ROOM_JOINED, { roomCode, playerId: socket.id, room });
     socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
-    socket.to(roomCode).emit(EVENTS.ROOM_UPDATE, { room });
+    broadcastArena(roomCode);
     console.log(`[room:join] socket=${socket.id} room=${roomCode} name="${name}"`);
   });
 
