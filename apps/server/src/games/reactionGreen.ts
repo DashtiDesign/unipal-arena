@@ -2,23 +2,23 @@ import { GameDefinition } from "@arena/shared";
 
 const DRAW_THRESHOLD_MS = 10;
 const ROUND_DURATION_MS = 15_000;
-const MAX_GREEN_DELAY_MS = 9_500; // green must appear before this many ms have elapsed
+// Green appears between 1000ms and 5000ms after game start (within first 5s, server-authoritative)
+const GREEN_MIN_DELAY_MS = 1000;
+const GREEN_MAX_DELAY_MS = 5000;
 
 interface State {
   playerIds: string[];
-  triggerAt: number;    // absolute epoch ms when green begins
+  triggerAt: number;    // absolute epoch ms when green begins (server-set, authoritative)
   endsAt: number;       // absolute epoch ms when round ends (for client display)
-  reactions: Record<string, number>; // playerId -> epoch ms of tap
+  reactions: Record<string, number>; // playerId -> epoch ms of tap (server-authoritative)
   earlyTap: Record<string, boolean>; // playerId -> tapped before green
 }
 
 interface Public {
-  // Client derives "triggered" from comparing Date.now() with triggerAt
-  // Sending the absolute triggerAt lets the client show the exact moment
   triggerAt: number;
   endsAt: number;
-  reacted: Record<string, boolean>;  // who has tapped (regardless of early/late)
-  earlyTap: Record<string, boolean>; // who tapped early (instant loss)
+  reacted: Record<string, boolean>;
+  earlyTap: Record<string, boolean>;
 }
 
 const reactionGreen: GameDefinition<State, Public> = {
@@ -31,8 +31,7 @@ const reactionGreen: GameDefinition<State, Public> = {
   },
   init(playerIds) {
     const now = Date.now();
-    // Green must appear within the first MAX_GREEN_DELAY_MS of the round
-    const delayMs = 1500 + Math.floor(Math.random() * (MAX_GREEN_DELAY_MS - 1500));
+    const delayMs = GREEN_MIN_DELAY_MS + Math.floor(Math.random() * (GREEN_MAX_DELAY_MS - GREEN_MIN_DELAY_MS));
     return {
       playerIds,
       triggerAt: now + delayMs,
@@ -50,26 +49,23 @@ const reactionGreen: GameDefinition<State, Public> = {
     };
   },
   input(s, playerId, payload) {
-    // Already tapped
     if (playerId in s.reactions || playerId in s.earlyTap) return s;
 
-    // Use client-reported tap time if provided and within ±500ms of server time (sanity-check)
-    const clientTapAt = (payload as { clientTapAt?: number })?.clientTapAt;
-    const serverNow = Date.now();
-    const tapAt = (typeof clientTapAt === "number" && Math.abs(clientTapAt - serverNow) < 500)
-      ? clientTapAt
-      : serverNow;
+    // Use clock-offset-corrected eventServerTime if provided (injected by GAME_INPUT handler).
+    // This prevents "too fast" false positives caused by network latency.
+    const p = payload as { eventServerTime?: number };
+    const tapAt = typeof p.eventServerTime === "number" ? p.eventServerTime : Date.now();
+
+    console.log(`[reaction_green] playerId=${playerId} tapAt=${tapAt} triggerAt=${s.triggerAt} delta=${tapAt - s.triggerAt}ms`);
 
     if (tapAt < s.triggerAt) {
-      // Early tap — instant loss marker
+      console.log(`[reaction_green] EARLY TAP playerId=${playerId} early by ${s.triggerAt - tapAt}ms`);
       return { ...s, earlyTap: { ...s.earlyTap, [playerId]: true } };
     }
     return { ...s, reactions: { ...s.reactions, [playerId]: tapAt } };
   },
   isResolved(s) {
-    // Any early tap is immediately final
     if (Object.keys(s.earlyTap).length > 0) return true;
-    // Both reacted after green → done
     return s.playerIds.every((id) => id in s.reactions);
   },
   resolve(s) {
@@ -81,29 +77,24 @@ const reactionGreen: GameDefinition<State, Public> = {
     const aTime  = s.reactions[a] ?? null;
     const bTime  = s.reactions[b] ?? null;
 
-    // Both tapped early → draw
     if (aEarly && bEarly) {
       outcomeByPlayerId[a] = 0.5;
       outcomeByPlayerId[b] = 0.5;
-    // Only one tapped early → other wins
     } else if (aEarly) {
       outcomeByPlayerId[a] = 0;
       outcomeByPlayerId[b] = 1;
     } else if (bEarly) {
       outcomeByPlayerId[a] = 1;
       outcomeByPlayerId[b] = 0;
-    // Neither tapped (time expired) → draw
     } else if (!aTime && !bTime) {
       outcomeByPlayerId[a] = 0.5;
       outcomeByPlayerId[b] = 0.5;
-    // Only one reacted
     } else if (!aTime) {
       outcomeByPlayerId[a] = 0;
       outcomeByPlayerId[b] = 1;
     } else if (!bTime) {
       outcomeByPlayerId[a] = 1;
       outcomeByPlayerId[b] = 0;
-    // Both reacted — compare times with threshold
     } else {
       const diff = Math.abs(aTime - bTime);
       if (diff <= DRAW_THRESHOLD_MS) {

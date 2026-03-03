@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { GameComponentProps } from "./types";
 import { Spinner } from "@heroui/react";
 
@@ -20,7 +20,16 @@ export default function MemoryGrid({
 }: GameComponentProps) {
   const s = publicState as State;
   const [now, setNow] = useState(Date.now);
+  // tapped is purely local optimistic state — reset whenever showUntil changes (new game)
   const [tapped, setTapped] = useState<number[]>([]);
+  const prevShowUntilRef = useRef(s.showUntil);
+
+  useEffect(() => {
+    if (prevShowUntilRef.current !== s.showUntil) {
+      prevShowUntilRef.current = s.showUntil;
+      setTapped([]); // new game round — reset local tapped
+    }
+  }, [s.showUntil]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 100);
@@ -28,7 +37,8 @@ export default function MemoryGrid({
   }, []);
 
   const revealing = now < s.showUntil;
-  const iDone = tapped.length >= s.numCells;
+  const serverDone = (s.tappedCount[playerId] ?? 0) >= s.numCells;
+  const iDone = serverDone || tapped.length >= s.numCells;
   const oppDone = (s.tappedCount[opponentId] ?? 0) >= s.numCells;
 
   if (s.results) {
@@ -117,7 +127,7 @@ export default function MemoryGrid({
       </div>
 
       {!revealing && <p className="text-xs text-(--muted)">{tapped.length}/{s.numCells} tapped</p>}
-      {oppDone && <p className="text-xs text-(--muted)">Opponent finished!</p>}
+      {oppDone && !iDone && <p className="text-xs text-(--muted)">Opponent finished!</p>}
     </div>
   );
 }

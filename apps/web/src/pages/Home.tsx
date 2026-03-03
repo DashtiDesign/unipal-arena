@@ -5,7 +5,7 @@ import { EVENTS } from "@arena/shared";
 import type { RoomJoinedPayload, RoomErrorPayload, ArenaUpdatePayload, PlayerRejoinAckPayload } from "@arena/shared";
 import type { Session } from "../App";
 
-const SESSION_KEY = "arena_session";
+export const SESSION_KEY = "arena_session";
 import { Button, Input, Spinner, Alert } from "@heroui/react";
 
 interface Props {
@@ -19,6 +19,16 @@ function getDeepLinkCode(): string {
   const params = new URLSearchParams(window.location.search);
   const code = params.get("room") ?? "";
   return /^\d{4}$/.test(code) ? code : "";
+}
+
+function getSavedSession(): { roomCode: string; playerId: string } | null {
+  try {
+    const saved = localStorage.getItem(SESSION_KEY);
+    if (!saved) return null;
+    const parsed = JSON.parse(saved) as { roomCode?: string; playerId?: string };
+    if (parsed.roomCode && parsed.playerId) return { roomCode: parsed.roomCode, playerId: parsed.playerId };
+  } catch { /* ignore */ }
+  return null;
 }
 
 /** Ensures socket is connected, then calls `emit`. Rejects on connect_error or timeout. */
@@ -68,6 +78,9 @@ export default function Home({ t, onJoined }: Props) {
   const [roomCode, setRoomCode] = useState(getDeepLinkCode);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Saved session shown as a manual "Rejoin" banner — NOT auto-joined
+  const [savedSession] = useState(getSavedSession);
+  const [rejoining, setRejoining] = useState(false);
   const isMounted = useRef(true);
 
   useEffect(() => {
@@ -109,25 +122,15 @@ export default function Home({ t, onJoined }: Props) {
     function onRoomError(payload: RoomErrorPayload) {
       if (!isMounted.current) return;
       setLoading(false);
+      setRejoining(false);
       const key = payload.messageKey as keyof T;
       setError((t[key] as string | undefined) ?? t.err_unknown);
-    }
-
-    // On every (re)connect: attempt to resume a previous session via PLAYER_REJOIN
-    function onConnect() {
-      try {
-        const saved = localStorage.getItem(SESSION_KEY);
-        if (!saved) return;
-        const { roomCode, playerId } = JSON.parse(saved) as { roomCode: string; playerId: string };
-        if (roomCode && playerId) {
-          socket.emit(EVENTS.PLAYER_REJOIN, { roomCode, playerId });
-        }
-      } catch { /* storage or parse error — ignore */ }
     }
 
     // Server confirmed rejoin — navigate straight to Lobby with full state snapshot
     function onRejoinAck(payload: PlayerRejoinAckPayload) {
       if (!isMounted.current) return;
+      setRejoining(false);
       onJoined({ roomCode: payload.room.id, playerId: payload.playerId, room: payload.room, arena: payload.arena });
     }
 
@@ -142,7 +145,6 @@ export default function Home({ t, onJoined }: Props) {
     socket.on(EVENTS.ARENA_UPDATE, onArenaUpdate);
     socket.on(EVENTS.ROOM_ERROR, onRoomError);
     socket.on(EVENTS.PLAYER_REJOIN_ACK, onRejoinAck);
-    socket.on("connect", onConnect);
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
@@ -151,7 +153,6 @@ export default function Home({ t, onJoined }: Props) {
       socket.off(EVENTS.ARENA_UPDATE, onArenaUpdate);
       socket.off(EVENTS.ROOM_ERROR, onRoomError);
       socket.off(EVENTS.PLAYER_REJOIN_ACK, onRejoinAck);
-      socket.off("connect", onConnect);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [t, onJoined]);
@@ -186,6 +187,27 @@ export default function Home({ t, onJoined }: Props) {
     }
   }
 
+  async function handleRejoin() {
+    if (!savedSession) return;
+    setError("");
+    setRejoining(true);
+    try {
+      await connectAndEmit(() =>
+        socket.emit(EVENTS.PLAYER_REJOIN, { roomCode: savedSession.roomCode, playerId: savedSession.playerId })
+      );
+    } catch {
+      if (isMounted.current) {
+        setRejoining(false);
+        setError("Couldn't reconnect. The room may have expired.");
+      }
+    }
+  }
+
+  function dismissSavedSession() {
+    try { localStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+    window.location.reload();
+  }
+
   function goTo(v: View) {
     setError("");
     setView(v);
@@ -198,6 +220,23 @@ export default function Home({ t, onJoined }: Props) {
           <h1 className="text-4xl font-extrabold tracking-tight">{t.appName}</h1>
           <p className="text-base text-(--muted)">{t.tagline}</p>
         </div>
+
+        {/* Manual rejoin banner — only shown if a previous session exists in localStorage */}
+        {savedSession && (
+          <div className="flex flex-col gap-2 p-4 rounded-2xl border border-(--border) bg-(--surface-secondary)">
+            <p className="text-sm font-semibold">
+              You were in room <span className="font-mono text-(--accent)">{savedSession.roomCode}</span>
+            </p>
+            <p className="text-xs text-(--muted)">Tap below to rejoin — only works if the room is still open.</p>
+            <div className="flex gap-2">
+              <Button variant="primary" size="sm" isDisabled={rejoining} onPress={handleRejoin}>
+                {rejoining ? <Spinner size="sm" /> : "Rejoin lobby"}
+              </Button>
+              <Button variant="outline" size="sm" onPress={dismissSavedSession}>Dismiss</Button>
+            </div>
+            {error && <p className="text-xs text-(--danger)">{error}</p>}
+          </div>
+        )}
 
         <div className="flex flex-col gap-3">
           <Button variant="primary" fullWidth size="lg" onPress={() => goTo("create")}>{t.createRoom}</Button>

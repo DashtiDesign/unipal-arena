@@ -6,19 +6,20 @@ const REVEAL_MS = 3000; // show for 3s
 
 interface State {
   playerIds: string[];
-  targets: number[];                    // sorted indices of highlighted cells
-  showUntil: number;                    // epoch ms — server sets, client hides after this
-  answers: Record<string, number[]>;    // playerId -> cells tapped so far (any cell, no dupes)
-  finishedAt: Record<string, number>;   // playerId -> elapsedMs since showUntil when they hit 5 taps
+  targets: number[];
+  showUntil: number;
+  answers: Record<string, number[]>;
+  finishedAt: Record<string, number>; // playerId -> elapsedMs since showUntil when they tapped 5 cells
+  // Track which players have submitted (tapped all 5), to guard against re-submissions
+  submitted: Record<string, boolean>;
 }
 
 interface Public {
-  targets: number[] | null;    // revealed during memorize phase, null after
-  showUntil: number;           // epoch ms — client uses this to hide grid
+  targets: number[] | null;
+  showUntil: number;
   tappedCount: Record<string, number>;
-  // Revealed once both done; null while waiting
   results: Record<string, { correct: boolean; elapsedMs: number }> | null;
-  numCells: number;            // how many cells to tap
+  numCells: number;
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -31,7 +32,7 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 function isDone(s: State, playerId: string): boolean {
-  return (s.answers[playerId] ?? []).length >= NUM_CELLS;
+  return s.submitted[playerId] === true;
 }
 
 function isCorrect(s: State, playerId: string): boolean {
@@ -43,7 +44,7 @@ function isCorrect(s: State, playerId: string): boolean {
 const memoryGrid: GameDefinition<State, Public> = {
   id: "memory_grid",
   displayName: { en: "Memory Grid", ar: "شبكة الذاكرة" },
-  durationMs: 15000, // 3s reveal + 12s to answer
+  durationMs: 15000,
   instructions: {
     en: "Memorize the highlighted cells, then tap all 5! First correct wins.",
     ar: "احفظ الخلايا المضيئة، ثم انقر على جميع الـ5! أول إجابة صحيحة تفوز.",
@@ -57,6 +58,7 @@ const memoryGrid: GameDefinition<State, Public> = {
       showUntil: Date.now() + REVEAL_MS,
       answers: Object.fromEntries(playerIds.map((id) => [id, []])),
       finishedAt: {},
+      submitted: Object.fromEntries(playerIds.map((id) => [id, false])),
     };
   },
   publicState(s) {
@@ -76,8 +78,10 @@ const memoryGrid: GameDefinition<State, Public> = {
     };
   },
   input(s, playerId, payload) {
+    // Reject during reveal phase
     if (Date.now() < s.showUntil) return s;
-    if (isDone(s, playerId)) return s; // already tapped 5 cells
+    // Guard: already submitted (tapped all 5) — never allow re-submission
+    if (isDone(s, playerId)) return s;
 
     const cell = (payload as { cell: number }).cell;
     if (!Number.isInteger(cell) || cell < 0 || cell >= GRID_SIZE) return s;
@@ -88,19 +92,22 @@ const memoryGrid: GameDefinition<State, Public> = {
     const next = [...current, cell];
     const finished = next.length === NUM_CELLS;
 
-    // elapsedMs measured from when the recall phase started (showUntil)
     const elapsedMs = finished ? Math.max(0, Date.now() - s.showUntil) : undefined;
 
     return {
       ...s,
       answers: { ...s.answers, [playerId]: next },
-      finishedAt: finished
-        ? { ...s.finishedAt, [playerId]: elapsedMs! }
-        : s.finishedAt,
+      finishedAt: finished ? { ...s.finishedAt, [playerId]: elapsedMs! } : s.finishedAt,
+      // Mark submitted immediately when player taps 5th cell — never flip back to false
+      submitted: finished ? { ...s.submitted, [playerId]: true } : s.submitted,
     };
   },
   isResolved(s) {
-    return s.playerIds.every((id) => isDone(s, id));
+    // Resolve as soon as either player has submitted all 5 cells and they are correct
+    // (first correct wins), OR both have submitted.
+    if (s.playerIds.every((id) => isDone(s, id))) return true;
+    // Early resolve if one player got all cells correct
+    return s.playerIds.some((id) => isDone(s, id) && isCorrect(s, id));
   },
   resolve(s) {
     const outcomeByPlayerId: Record<string, number> = {};
@@ -116,10 +123,8 @@ const memoryGrid: GameDefinition<State, Public> = {
     const correctPlayers = s.playerIds.filter((id) => results[id].correct);
 
     if (correctPlayers.length === 0) {
-      // Both wrong — draw
       for (const id of s.playerIds) outcomeByPlayerId[id] = 0.5;
     } else if (correctPlayers.length === 2) {
-      // Both correct — faster wins (≤50ms threshold = draw)
       const [a, b] = s.playerIds;
       const diff = Math.abs(results[a].elapsedMs - results[b].elapsedMs);
       if (diff <= 50) {
@@ -130,7 +135,6 @@ const memoryGrid: GameDefinition<State, Public> = {
         for (const id of s.playerIds) outcomeByPlayerId[id] = id === faster ? 1 : 0;
       }
     } else {
-      // Exactly one correct — they win
       for (const id of s.playerIds) {
         outcomeByPlayerId[id] = results[id].correct ? 1 : 0;
       }

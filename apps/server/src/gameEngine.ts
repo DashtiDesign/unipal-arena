@@ -1,6 +1,11 @@
 import { Server } from "socket.io";
-import type { ArenaDuel, RoundDuel, LeaderboardEntry } from "@arena/shared";
+import type { ArenaDuel, RoundDuel, LeaderboardEntry, MatchResultEntry, MatchScoreSummary, MatchAnswerDetails } from "@arena/shared";
 import { EVENTS } from "@arena/shared";
+
+// Accumulates per-duel results within a round so the final DUEL_RESULT broadcast
+// can include all matches (needed by benched players' result screen).
+// Cleared when a new round starts (in scheduleRound via resolvedDuels.set).
+const roundMatchResults = new Map<string, MatchResultEntry[]>(); // roomCode → entries
 import {
   rooms, arenas, gameStates, gameTimers, bombTimers, resolvedDuels, socketOf,
 } from "./state";
@@ -50,12 +55,99 @@ export function clearRoundTimer(roomCode: string): void {
 
 export function clearAllGameTimers(roomCode: string): void {
   clearRoundTimer(roomCode);
+  roundMatchResults.delete(roomCode);
   const arena = arenas.get(roomCode);
   if (arena) {
     for (const d of arena.duels) {
       clearDuelTimer(d.matchId);
       gameStates.delete(d.matchId);
     }
+  }
+}
+
+// ── Score/answer extraction ────────────────────────────────────────────────────
+
+function extractMatchMeta(
+  gameDefId: string,
+  stats: Record<string, unknown>,
+  aId: string,
+  bId: string,
+): { scoreSummary?: MatchScoreSummary; answerDetails?: MatchAnswerDetails } {
+  type CRResult = { correct: boolean; elapsedMs: number };
+
+  switch (gameDefId) {
+    case "tapping_speed": {
+      const taps = stats.taps as Record<string, number> | undefined;
+      return { scoreSummary: { aValue: taps?.[aId] ?? 0, bValue: taps?.[bId] ?? 0, label: "taps" } };
+    }
+    case "reaction_green": {
+      type RResult = { early: boolean; elapsedMs: number | null };
+      const results = stats.results as Record<string, RResult> | undefined;
+      const a = results?.[aId]; const b = results?.[bId];
+      const fmt = (r: RResult | undefined) => r?.early ? "too early" : r?.elapsedMs != null ? `${(r.elapsedMs / 1000).toFixed(3)}s` : "—";
+      return { scoreSummary: { aValue: fmt(a), bValue: fmt(b), label: "time" } };
+    }
+    case "stop_at_10s": {
+      type SResult = { elapsedMs: number | null };
+      const results = stats.results as Record<string, SResult> | undefined;
+      const a = results?.[aId]; const b = results?.[bId];
+      const fmt = (r: SResult | undefined) => r?.elapsedMs != null ? `${(r.elapsedMs / 1000).toFixed(3)}s` : "—";
+      return { scoreSummary: { aValue: fmt(a), bValue: fmt(b), label: "stopped at" } };
+    }
+    case "quick_maths": {
+      const results = stats.results as Record<string, CRResult> | undefined;
+      const answer = stats.answer as number | undefined;
+      const aRes = results?.[aId]; const bRes = results?.[bId];
+      const fmt = (r: CRResult | undefined) => r ? (r.correct ? `✓ ${(r.elapsedMs / 1000).toFixed(2)}s` : "✗") : "—";
+      return {
+        scoreSummary: { aValue: fmt(aRes), bValue: fmt(bRes), label: "answer" },
+        answerDetails: { correctAnswer: answer, showAnswers: true },
+      };
+    }
+    case "emoji_odd_one_out": {
+      const results = stats.results as Record<string, CRResult> | undefined;
+      const aRes = results?.[aId]; const bRes = results?.[bId];
+      const fmt = (r: CRResult | undefined) => r ? (r.correct ? `✓ ${(r.elapsedMs / 1000).toFixed(2)}s` : "✗") : "—";
+      return { scoreSummary: { aValue: fmt(aRes), bValue: fmt(bRes), label: "answer" } };
+    }
+    case "memory_grid": {
+      const results = stats.results as Record<string, CRResult> | undefined;
+      const aRes = results?.[aId]; const bRes = results?.[bId];
+      const fmt = (r: CRResult | undefined) => r ? (r.correct ? `✓ ${(r.elapsedMs / 1000).toFixed(2)}s` : "✗") : "—";
+      // showAnswers = false — never reveal the grid answer breakdown
+      return {
+        scoreSummary: { aValue: fmt(aRes), bValue: fmt(bRes), label: "memory" },
+        answerDetails: { showAnswers: false },
+      };
+    }
+    case "higher_lower": {
+      const secret = stats.secret as number | undefined;
+      const aHistory = (stats[aId] as string | undefined) ?? "";
+      const bHistory = (stats[bId] as string | undefined) ?? "";
+      // Extract last guess from history string "42(lower),55(higher),60(correct)"
+      const lastGuess = (h: string) => {
+        const parts = h.split(",");
+        const last = parts[parts.length - 1];
+        const m = last?.match(/^(\d+)\(/);
+        return m ? Number(m[1]) : null;
+      };
+      return {
+        scoreSummary: { aValue: aHistory || "—", bValue: bHistory || "—", label: "guesses" },
+        answerDetails: { correctAnswer: secret, aAnswer: lastGuess(aHistory), bAnswer: lastGuess(bHistory), showAnswers: true },
+      };
+    }
+    case "whack_a_logo": {
+      const hits = stats.hits as Record<string, number> | undefined;
+      return { scoreSummary: { aValue: hits?.[aId] ?? 0, bValue: hits?.[bId] ?? 0, label: "hits" } };
+    }
+    case "rock_paper_scissors": {
+      const fc = stats.finalChoices as Record<string, string> | null | undefined;
+      return { scoreSummary: { aValue: fc?.[aId] ?? "—", bValue: fc?.[bId] ?? "—", label: "choice" } };
+    }
+    case "tic_tac_toe":
+      return {};
+    default:
+      return {};
   }
 }
 
@@ -100,19 +192,71 @@ export function resolveDuel(roomCode: string, duel: RoundDuel, io: Server): void
     if (p.id in deltaScores) p.score += deltaScores[p.id];
   }
 
+  // Accumulate match result for end-of-round summary
+  const aPlayer = room.players.find((p) => p.id === duel.aId);
+  const bPlayer = room.players.find((p) => p.id === duel.bId);
+  const topOutcomeForDuel = Math.max(...Object.values(result.outcomeByPlayerId) as number[]);
+  const duelWinners = Object.entries(result.outcomeByPlayerId).filter(([, v]) => v === topOutcomeForDuel);
+  const duelIsDraw = duelWinners.length > 1;
+  const duelWinnerId = duelIsDraw ? null : duelWinners[0][0];
+  const duelWinnerName = duelWinnerId ? (room.players.find((p) => p.id === duelWinnerId)?.name ?? null) : null;
+
+  const matchMeta = extractMatchMeta(duel.gameDefId, result.stats as Record<string, unknown>, duel.aId, duel.bId);
+  const matchEntry: MatchResultEntry = {
+    aId: duel.aId,
+    aName: aPlayer?.name ?? duel.aId.slice(0, 6),
+    bId: duel.bId,
+    bName: bPlayer?.name ?? duel.bId.slice(0, 6),
+    winnerId: duelWinnerId,
+    winnerName: duelWinnerName,
+    isDraw: duelIsDraw,
+    gameDefId: duel.gameDefId,
+    stats: result.stats as Record<string, unknown>,
+    scoreSummary: matchMeta.scoreSummary,
+    answerDetails: matchMeta.answerDetails,
+  };
+  if (!roundMatchResults.has(roomCode)) roundMatchResults.set(roomCode, []);
+  roundMatchResults.get(roomCode)!.push(matchEntry);
+
   // Check if ALL duels in this round are resolved
   if (!arena.duels.every((d) => resolved!.has(d.matchId))) return;
 
   // All duels done — transition to RESULT
   resolvedDuels.delete(roomCode);
+  const allMatches = roundMatchResults.get(roomCode) ?? [];
+  roundMatchResults.delete(roomCode);
+
   const lb: LeaderboardEntry[] = leaderboard(room);
+  // For the headline, use the last resolved duel's result
   const topOutcome = Math.max(...Object.values(result.outcomeByPlayerId) as number[]);
   const arenaWinners = Object.entries(result.outcomeByPlayerId).filter(([, v]) => v === topOutcome);
   const isDraw = arenaWinners.length > 1;
   const winnerId = isDraw ? null : arenaWinners[0][0];
 
+  // Aggregate delta scores across all duels this round
+  const roundDeltaScores: Record<string, number> = {};
+  for (const entry of allMatches) {
+    for (const pid of [entry.aId, entry.bId]) {
+      if (!(pid in roundDeltaScores)) roundDeltaScores[pid] = 0;
+    }
+  }
+  // Re-compute from per-duel outcomes (deltaScores only covers last duel — use per-duel data)
+  for (const entry of allMatches) {
+    const aOutcome = entry.winnerId === entry.aId ? 1 : entry.isDraw ? 0.5 : 0;
+    const bOutcome = entry.winnerId === entry.bId ? 1 : entry.isDraw ? 0.5 : 0;
+    roundDeltaScores[entry.aId] = (roundDeltaScores[entry.aId] ?? 0) + aOutcome;
+    roundDeltaScores[entry.bId] = (roundDeltaScores[entry.bId] ?? 0) + bOutcome;
+  }
+
   arena.phase = "RESULT";
-  arena.lastResult = { winnerId, isDraw, deltaScores, leaderboard: lb };
+  arena.lastResult = {
+    winnerId,
+    isDraw,
+    deltaScores: roundDeltaScores,
+    leaderboard: lb,
+    matches: allMatches,
+    benchedId: arena.benchedId,
+  };
   arena.lastGameResult = {
     roomCode,
     matchId,
@@ -128,7 +272,14 @@ export function resolveDuel(roomCode: string, duel: RoundDuel, io: Server): void
     const playerDuel = arena.duels.find((d) => d.aId === player.id || d.bId === player.id) ?? null;
     io.to(sid).emit(EVENTS.ARENA_UPDATE, { room, arena: { ...arena, duel: playerDuel } });
   }
-  io.to(roomCode).emit(EVENTS.DUEL_RESULT, { winnerId, isDraw, deltaScores, leaderboard: lb });
+  io.to(roomCode).emit(EVENTS.DUEL_RESULT, {
+    winnerId,
+    isDraw,
+    deltaScores: roundDeltaScores,
+    leaderboard: lb,
+    matches: allMatches,
+    benchedId: arena.benchedId,
+  });
   persistArena(roomCode, arena);
 
   const champion = room.players.find((p) => p.score >= WIN_SCORE);

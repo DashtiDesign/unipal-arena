@@ -4,13 +4,14 @@ const TARGET_MS = 10000;
 
 interface State {
   playerIds: string[];
-  startAt: number;               // epoch ms when game started (for fallback)
-  stops: Record<string, number>; // playerId -> elapsed ms (client-reported)
+  startAt: number;               // epoch ms when game started (server-authoritative)
+  stops: Record<string, number>; // playerId -> elapsed ms (server-authoritative delta)
 }
 interface Public {
   startAt: number;               // epoch ms — client uses this to sync its local timer
   stopped: Record<string, boolean>;
-  stopTimes: Record<string, number | null>; // revealed after both stop or time up (elapsed ms)
+  // Revealed after both stop or time up: the exact elapsed ms used by server for judgement
+  stopTimes: Record<string, number | null>;
 }
 
 const stopAt10s: GameDefinition<State, Public> = {
@@ -37,13 +38,26 @@ const stopAt10s: GameDefinition<State, Public> = {
   },
   input(s, playerId, payload) {
     if (playerId in s.stops) return s;
-    // Use client-reported elapsed ms if provided and plausible; fall back to server time
-    const clientMs = (payload as { clientStopMs?: number })?.clientStopMs;
-    const serverMs = Date.now() - s.startAt;
-    // Accept client value if within ±500ms of server measurement (sanity-check)
-    const elapsedMs = (typeof clientMs === "number" && Math.abs(clientMs - serverMs) < 500)
-      ? Math.round(clientMs)
-      : serverMs;
+
+    // Server-authoritative delta:
+    // eventServerTime is injected by GAME_INPUT handler after clock-offset calibration.
+    // playerStopDeltaMs = eventServerTime - startAt
+    // This is what gets displayed and compared — no client-side recomputation.
+    const p = payload as { eventServerTime?: number; clientNowMs?: number };
+    let elapsedMs: number;
+
+    if (typeof p.eventServerTime === "number") {
+      elapsedMs = Math.round(p.eventServerTime - s.startAt);
+    } else {
+      // Fallback: pure server time (no calibration available)
+      elapsedMs = Date.now() - s.startAt;
+    }
+
+    // Sanity clamp: must be non-negative and within game duration
+    elapsedMs = Math.max(0, Math.min(15000, elapsedMs));
+
+    console.log(`[stop_at_10s] playerId=${playerId} elapsedMs=${elapsedMs} diff=${Math.abs(elapsedMs - TARGET_MS)}ms`);
+
     return { ...s, stops: { ...s.stops, [playerId]: elapsedMs } };
   },
   resolve(s) {
@@ -55,7 +69,6 @@ const stopAt10s: GameDefinition<State, Public> = {
     const minDiff = Math.min(...diffs.map((d) => d.diff));
     const outcomeByPlayerId: Record<string, number> = {};
 
-    // Strict millisecond comparison — exact same delta = draw, otherwise closer wins
     if (diffs[0].diff === diffs[1].diff) {
       for (const { id } of diffs) outcomeByPlayerId[id] = 0.5;
     } else {
@@ -67,7 +80,7 @@ const stopAt10s: GameDefinition<State, Public> = {
     const results: Record<string, { elapsedMs: number | null; diffMs: number }> = {};
     for (const d of diffs) {
       results[d.id] = {
-        elapsedMs: d.elapsed,                               // client-reported elapsed ms
+        elapsedMs: d.elapsed,
         diffMs: d.diff === Infinity ? -1 : Math.round(d.diff),
       };
     }

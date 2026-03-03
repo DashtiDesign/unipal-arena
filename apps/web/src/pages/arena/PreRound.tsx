@@ -32,13 +32,21 @@ export default function PreRound({
   const opponentName = opponentId ? (room.players.find((p) => p.id === opponentId)?.name ?? "?") : null;
   const benchedPlayer = arena.benchedId ? room.players.find((p) => p.id === arena.benchedId) : null;
 
-  const [countdown, setCountdown] = useState<number | null>(null);
+  // countdownActive: true once countdown starts; stays true until parent switches phase to DUELING.
+  // This prevents flashing back to the pre-game card while waiting for the DUELING phase update.
+  const [countdownActive, setCountdownActive] = useState(false);
+  const [countdown, setCountdown] = useState(3);
 
   useEffect(() => {
-    if (!arena.countdownStartAt) { setCountdown(null); return; }
+    if (!arena.countdownStartAt) {
+      setCountdownActive(false);
+      setCountdown(3);
+      return;
+    }
+    setCountdownActive(true);
     function tick() {
       const remaining = Math.ceil((COUNTDOWN_MS - (Date.now() - arena.countdownStartAt!)) / 1000);
-      setCountdown(remaining <= 0 ? null : remaining);
+      setCountdown(Math.max(1, remaining)); // clamp to 1 so we show "1" not "0" during transition
     }
     tick();
     const id = setInterval(tick, 100);
@@ -47,7 +55,7 @@ export default function PreRound({
 
   function pName(id: string) { return room.players.find((p) => p.id === id)?.name ?? "?"; }
 
-  if (countdown !== null) {
+  if (countdownActive) {
     return (
       <main className="flex flex-col items-center justify-center px-4 gap-4 min-h-[60vh]">
         <p className="text-xs text-(--muted) uppercase tracking-widest">{gameName}</p>

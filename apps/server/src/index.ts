@@ -164,7 +164,7 @@ io.on("connection", (socket) => {
 
     const roomCode = generateRoomCode();
     const playerId = createPlayerId();
-    const player: Player = { id: playerId, name, isReady: false, score: 0 };
+    const player: Player = { id: playerId, name, isReady: false, score: 0, clockOffsetMs: 0 };
     const room: Room = { id: roomCode, hostId: playerId, players: [player], createdAt: Date.now() };
 
     rooms.set(roomCode, room);
@@ -222,7 +222,7 @@ io.on("connection", (socket) => {
     evictFromPreviousRoom(socket.id, io);
 
     const playerId = createPlayerId();
-    const player: Player = { id: playerId, name, isReady: false, score: 0 };
+    const player: Player = { id: playerId, name, isReady: false, score: 0, clockOffsetMs: 0 };
     room.players.push(player);
     socket.join(roomCode);
     registerSocket(socket.id, playerId, roomCode);
@@ -302,7 +302,25 @@ io.on("connection", (socket) => {
     const state = gameStates.get(matchId);
     if (!def || !state) return;
 
-    const newState = def.input(state, playerId, payload.payload);
+    // Clock calibration: if client sends clockOffsetMs, update stored value on player.
+    // eventServerTime = clientNowMs + player.clockOffsetMs (computed per-input).
+    const innerPayload = payload.payload as Record<string, unknown> | null | undefined;
+    const room = rooms.get(roomCode);
+    const player = room?.players.find((p) => p.id === playerId);
+    if (player && typeof innerPayload?.clockOffsetMs === "number") {
+      player.clockOffsetMs = innerPayload.clockOffsetMs;
+    }
+    // Inject server-corrected timestamp into the inner payload for game engines to use.
+    let enrichedPayload = innerPayload;
+    if (player && typeof innerPayload?.clientNowMs === "number") {
+      const eventServerTime = innerPayload.clientNowMs + player.clockOffsetMs;
+      const serverNow = Date.now();
+      // Anti-cheat: clamp to ±2s of server clock
+      const clamped = Math.max(serverNow - 2000, Math.min(serverNow + 2000, eventServerTime));
+      enrichedPayload = { ...innerPayload, eventServerTime: clamped };
+    }
+
+    const newState = def.input(state, playerId, enrichedPayload ?? payload.payload);
     gameStates.set(matchId, newState);
     broadcastGameStateForDuel(matchId, roomCode, duel, arena.endsAt ?? Date.now(), arena.gameId, io);
 
@@ -440,6 +458,28 @@ io.on("connection", (socket) => {
     handleRejoin(socket, playerId, roomCode);
   });
 
+  // ── CLOCK_PING ───────────────────────────────────────────────────────────────
+  // Lightweight clock calibration: client sends t0_client, server echoes it back
+  // with t1_server. Client computes offset = t1_server - (t0_client + rtt/2).
+  // After 3 samples the median offset is stored on the player and used to
+  // convert clientNowMs → eventServerTime for timing-sensitive games.
+
+  socket.on(EVENTS.CLOCK_PING, (payload: { t0_client: number; seq?: number; roomCode?: string }) => {
+    const t1_server = Date.now();
+    socket.emit(EVENTS.CLOCK_PONG, { t0_client: payload.t0_client, t1_server, seq: payload.seq });
+
+    // If this is the final sample (seq === 2), update the player's stored offset
+    if (payload.seq === 2 && payload.roomCode) {
+      const playerId = socketPlayers.get(socket.id);
+      const room = playerId ? rooms.get(payload.roomCode) : null;
+      const player = room?.players.find((p) => p.id === playerId);
+      if (player) {
+        // offset will be re-computed and stored from client via a follow-up GAME_INPUT field;
+        // nothing to do server-side here — the offset arrives with each input event.
+      }
+    }
+  });
+
   // ── disconnect ───────────────────────────────────────────────────────────────
 
   socket.on("disconnect", (reason) => {
@@ -450,11 +490,11 @@ io.on("connection", (socket) => {
 
     if (!playerId) return;
 
-    // 30s grace window before eviction — allows mid-game reconnect to resume session
+    // 60s grace window before eviction — allows mid-game reconnect to resume session
     const t = setTimeout(() => {
       abandonTimers.delete(playerId);
       handleLeave(playerId, roomCode, "disconnect", io);
-    }, 30_000);
+    }, 60_000);
     abandonTimers.set(playerId, t);
   });
 });

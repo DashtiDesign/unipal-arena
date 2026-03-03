@@ -28,6 +28,7 @@ const HINT_CLASS: Record<Hint, string> = {
 
 interface FloatAnim { key: number; hint: Hint }
 let _floatKey = 0;
+let _seq = 0;
 
 export default function HigherLower({
   publicState, playerId, opponentId, onInput, remainingMs, privateState,
@@ -35,6 +36,7 @@ export default function HigherLower({
   const s = publicState as PublicState;
   const hints = (privateState ?? []) as HintEvent[];
   const [input, setInput] = useState("");
+  const submittingRef = useRef(false);
 
   // Floating hint animation driven by new server hints
   const prevHintCountRef = useRef(0);
@@ -55,7 +57,10 @@ export default function HigherLower({
     });
   }
 
+  // Reset submitting guard when server acknowledges our submission
   const iSubmitted = s.submitted[playerId] ?? false;
+  if (!iSubmitted) submittingRef.current = false;
+
   const oppSubmitted = s.submitted[opponentId] ?? false;
   const lastHint = hints.length > 0 ? hints[hints.length - 1] : null;
 
@@ -72,9 +77,14 @@ export default function HigherLower({
   function submit() {
     const n = Number(input);
     if (!input || isNaN(n) || n < 1 || n > 100) return;
-    onInput({ guess: n });
+    if (submittingRef.current || iSubmitted) return; // prevent double-fire
+    submittingRef.current = true;
+    onInput({ guess: n, seq: _seq++ });
     setInput("");
   }
+
+  // Show at most 3 most-recent hints (newest at top)
+  const visibleHints = [...hints].reverse().slice(0, 3);
 
   return (
     <div className="flex flex-col items-center gap-4 py-4 w-full relative">
@@ -95,8 +105,8 @@ export default function HigherLower({
       ))}
 
       {hints.length > 0 && (
-        <div className="w-full flex flex-col gap-1 max-h-64 overflow-y-auto">
-          {hints.map((h, i) => (
+        <div className="w-full flex flex-col gap-1">
+          {visibleHints.map((h, i) => (
             <div key={i} className={`flex items-center gap-2 text-sm ${HINT_CLASS[h.hint]}`}>
               <span className="text-(--muted) tabular-nums w-16 shrink-0">R{h.round}</span>
               <span className="tabular-nums font-mono w-8 shrink-0">{h.guess}</span>
@@ -123,9 +133,10 @@ export default function HigherLower({
           />
           <Button
             variant="primary"
+            size="lg"
             isDisabled={!input}
             onPress={submit}
-            className="h-14 px-6 text-base font-semibold"
+            className="h-14 px-8 text-xl font-bold"
           >
             ✓
           </Button>

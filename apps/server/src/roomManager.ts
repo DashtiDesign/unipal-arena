@@ -9,7 +9,7 @@ import type {
 } from "@arena/shared";
 import { EVENTS } from "@arena/shared";
 import {
-  rooms, arenas, benchCounts, lastBenched, gameDecks,
+  rooms, arenas, benchCounts, lastBenched, gameDecks, lastGameDefIds,
   resolvedDuels, socketRooms, socketPlayers, playerSockets,
   socketOf,
 } from "./state";
@@ -136,9 +136,10 @@ export function scheduleRound(roomCode: string, io: Server): void {
     [duelers[i], duelers[j]] = [duelers[j], duelers[i]];
   }
 
-  // Same game for all duels in this round
+  // Same game for all duels in this round — never repeat the last game played
   if (!gameDecks.has(roomCode)) gameDecks.set(roomCode, freshDeck());
-  const gameDef = nextFromDeck(gameDecks.get(roomCode)!);
+  const gameDef = nextFromDeck(gameDecks.get(roomCode)!, lastGameDefIds.get(roomCode));
+  lastGameDefIds.set(roomCode, gameDef.id);
   const gameMeta = {
     gameDefId: gameDef.id,
     displayName: gameDef.displayName,
@@ -237,6 +238,7 @@ export function handleLeave(
       benchCounts.delete(room.id);
       lastBenched.delete(room.id);
       gameDecks.delete(room.id);
+      lastGameDefIds.delete(room.id);
       clearAllGameTimers(room.id);
       resolvedDuels.delete(room.id);
     } else {

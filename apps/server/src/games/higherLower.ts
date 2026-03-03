@@ -21,6 +21,8 @@ interface State {
   winner: string | null;
   isDraw: boolean;
   finished: boolean;
+  // Last accepted seq per player — deduplicate double-submissions
+  lastSeq: Record<string, number>;
 }
 
 interface Public {
@@ -50,6 +52,7 @@ const higherLower: GameDefinition<State, Public> = {
       winner: null,
       isDraw: false,
       finished: false,
+      lastSeq: Object.fromEntries(playerIds.map((id) => [id, -1])),
     };
   },
 
@@ -71,6 +74,13 @@ const higherLower: GameDefinition<State, Public> = {
   input(s, playerId, payload) {
     if (s.finished) return s;
 
+    // Seq-based dedup: if the same seq is re-submitted, ignore it
+    const p = payload as { guess: unknown; seq?: number };
+    if (typeof p.seq === "number") {
+      const prevSeq = s.lastSeq?.[playerId] ?? -1;
+      if (p.seq <= prevSeq) return s; // duplicate or out-of-order
+    }
+
     // If both players' guesses from the previous round are still present (round advanced
     // but roundGuesses wasn't cleared yet), clear them now for the new round.
     const stale = s.playerIds.every((id) => id in s.roundGuesses);
@@ -78,19 +88,22 @@ const higherLower: GameDefinition<State, Public> = {
 
     if (currentGuesses[playerId]) return s; // already submitted this round
 
-    const guess = Number((payload as { guess: unknown }).guess);
+    const guess = Number(p.guess);
     if (!Number.isInteger(guess) || guess < 1 || guess > 100) return s;
 
     const hint: Hint =
       guess === s.secret ? "correct" : guess < s.secret ? "higher" : "lower";
 
     const newRoundGuesses = { ...currentGuesses, [playerId]: { guess, hint } };
+    const newLastSeq = typeof p.seq === "number"
+      ? { ...(s.lastSeq ?? {}), [playerId]: p.seq }
+      : s.lastSeq;
 
     // Check if both players have submitted this round
     const bothSubmitted = s.playerIds.every((id) => id in newRoundGuesses);
 
     if (!bothSubmitted) {
-      return { ...s, roundGuesses: newRoundGuesses };
+      return { ...s, roundGuesses: newRoundGuesses, lastSeq: newLastSeq };
     }
 
     // Both submitted — append to history and evaluate
@@ -105,13 +118,13 @@ const higherLower: GameDefinition<State, Public> = {
 
     if (aCorrect && bCorrect) {
       // Both correct same round → draw
-      return { ...s, roundGuesses: newRoundGuesses, history: newHistory, isDraw: true, finished: true };
+      return { ...s, roundGuesses: newRoundGuesses, history: newHistory, lastSeq: newLastSeq, isDraw: true, finished: true };
     }
     if (aCorrect) {
-      return { ...s, roundGuesses: newRoundGuesses, history: newHistory, winner: a, finished: true };
+      return { ...s, roundGuesses: newRoundGuesses, history: newHistory, lastSeq: newLastSeq, winner: a, finished: true };
     }
     if (bCorrect) {
-      return { ...s, roundGuesses: newRoundGuesses, history: newHistory, winner: b, finished: true };
+      return { ...s, roundGuesses: newRoundGuesses, history: newHistory, lastSeq: newLastSeq, winner: b, finished: true };
     }
 
     // Neither correct — advance to next round.
@@ -121,6 +134,7 @@ const higherLower: GameDefinition<State, Public> = {
       ...s,
       history: newHistory,
       roundGuesses: newRoundGuesses,
+      lastSeq: newLastSeq,
       round: s.round + 1,
     };
   },

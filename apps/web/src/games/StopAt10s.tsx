@@ -8,11 +8,11 @@ interface State {
   stopTimes: Record<string, number | null>;
 }
 
-export default function StopAt10s({ publicState, playerId, onInput }: GameComponentProps) {
+export default function StopAt10s({ publicState, playerId, onInput, clockOffsetMs = 0 }: GameComponentProps) {
   const s = publicState as State;
   const myStopped = s.stopped[playerId] ?? false;
   const [elapsed, setElapsed] = useState(0);
-  // localStopMs: the client-captured elapsed ms at the moment of tap — never changes after set
+  // localStopMs: the server-authoritative elapsed ms captured at moment of tap
   const localStopMsRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
@@ -21,7 +21,6 @@ export default function StopAt10s({ publicState, playerId, onInput }: GameCompon
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       return;
     }
-    // Reset local stop when a new game round starts
     localStopMsRef.current = null;
     function tick() {
       setElapsed(Date.now() - s.startAt);
@@ -34,17 +33,21 @@ export default function StopAt10s({ publicState, playerId, onInput }: GameCompon
   function handleStop(e: React.PointerEvent) {
     e.preventDefault();
     if (myStopped || localStopMsRef.current !== null) return;
-    // Capture the elapsed time at this exact moment — this is what we display and send
-    const clientStopMs = Date.now() - s.startAt;
-    localStopMsRef.current = clientStopMs;
-    setElapsed(clientStopMs); // freeze display immediately
-    onInput({ clientStopMs });
+    const clientNowMs = Date.now();
+    // Server will compute: elapsedMs = (clientNowMs + clockOffsetMs) - startAt
+    const predictedElapsed = clientNowMs - s.startAt + (clockOffsetMs ?? 0);
+    localStopMsRef.current = Math.max(0, Math.round(predictedElapsed));
+    setElapsed(localStopMsRef.current);
+    onInput({ clientNowMs });
   }
 
-  // Display priority: local stop (immediate, no server roundtrip) > server stopTime > live elapsed
-  const displayMs = localStopMsRef.current !== null
-    ? localStopMsRef.current
-    : (s.stopTimes[playerId] ?? elapsed);
+  // Display: use local predicted stop first (instant feedback), then server value once revealed
+  const serverRevealedTime = s.stopTimes[playerId];
+  const displayMs = serverRevealedTime != null
+    ? serverRevealedTime
+    : localStopMsRef.current !== null
+      ? localStopMsRef.current
+      : elapsed;
 
   const timerColor =
     displayMs < 9000  ? "text-(--foreground)" :

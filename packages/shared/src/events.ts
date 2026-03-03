@@ -9,6 +9,8 @@ export const CLIENT_EVENTS = {
   // Game
   GAME_INPUT: "game:input",
   GAME_SYNC: "game:sync",
+  // Clock calibration
+  CLOCK_PING: "clock:ping",
   // Reconnect
   PLAYER_REJOIN: "player:rejoin",
 } as const;
@@ -25,6 +27,8 @@ export const SERVER_EVENTS = {
   GAME_STATE: "game:state",
   GAME_RESULT: "game:result",
   GAME_PRIVATE: "game:private",
+  // Clock calibration
+  CLOCK_PONG: "clock:pong",
   // Reconnect
   PLAYER_REJOIN_ACK: "player:rejoin_ack",
 } as const;

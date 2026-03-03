@@ -48,11 +48,19 @@ export function freshDeck(): string[] {
 /**
  * Pop the next game id from the deck. If the deck is empty, reshuffle a fresh
  * one and pop from that. Mutates the passed-in array.
+ * If `lastId` is provided, skip that id (never repeat the same game back-to-back).
  */
-export function nextFromDeck(deck: string[]): GameDefinition {
+export function nextFromDeck(deck: string[], lastId?: string): GameDefinition {
   if (deck.length === 0) {
     const fresh = freshDeck();
     deck.push(...fresh);
+  }
+  // If the next candidate matches lastId and there are other games available, skip it.
+  if (lastId && deck.length > 1 && deck[deck.length - 1] === lastId) {
+    // Swap the top with the one below it to avoid immediate repeat
+    const tmp = deck[deck.length - 1];
+    deck[deck.length - 1] = deck[deck.length - 2];
+    deck[deck.length - 2] = tmp;
   }
   const id = deck.pop()!;
   return REGISTRY.get(id)!;

@@ -11,6 +11,8 @@ export const benchCounts  = new Map<string, Map<string, number>>();
 // Last benched player per room (enforce "no twice in a row")
 export const lastBenched  = new Map<string, string>();
 export const gameDecks    = new Map<string, string[]>();
+// Last game def id played per room (to avoid consecutive repeats)
+export const lastGameDefIds = new Map<string, string>();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const gameStates   = new Map<string, any>();              // keyed by matchId
 export const gameTimers   = new Map<string, ReturnType<typeof setTimeout>>(); // keyed by matchId or `round:${roomCode}`

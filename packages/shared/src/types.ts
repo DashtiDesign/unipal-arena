@@ -3,6 +3,8 @@ export interface Player {
   name: string;
   isReady: boolean;
   score: number;
+  /** Server-computed clock offset: eventServerTime = clientNowMs + clockOffsetMs */
+  clockOffsetMs: number;
 }
 
 export interface Room {
@@ -114,11 +116,42 @@ export interface ArenaUpdatePayload {
   arena: ArenaState;
 }
 
+export interface MatchScoreSummary {
+  aValue?: string | number;
+  bValue?: string | number;
+  label?: string; // e.g. "hits", "time", "score"
+}
+
+export interface MatchAnswerDetails {
+  correctAnswer?: string | number;
+  aAnswer?: string | number | null;
+  bAnswer?: string | number | null;
+  showAnswers: boolean; // false for memory_grid
+}
+
+export interface MatchResultEntry {
+  aId: string;
+  aName: string;
+  bId: string;
+  bName: string;
+  winnerId: string | null;
+  winnerName: string | null;
+  isDraw: boolean;
+  gameDefId: string;
+  stats: Record<string, unknown>;
+  scoreSummary?: MatchScoreSummary;
+  answerDetails?: MatchAnswerDetails;
+}
+
 export interface DuelResultBroadcast {
   winnerId: string | null;
   isDraw: boolean;
   deltaScores: Record<string, number>;
   leaderboard: LeaderboardEntry[];
+  /** All match results for this round (needed by benched players' result screen) */
+  matches: MatchResultEntry[];
+  /** Player benched this round, if any */
+  benchedId: string | null;
 }
 
 export interface GameStatePayload {
@@ -143,6 +176,11 @@ export interface GamePrivatePayload {
   gameId: number;
   data: unknown;
 }
+
+// ── Clock calibration payloads ────────────────────────────────────────────────
+
+export interface ClockPingPayload  { t0_client: number }
+export interface ClockPongPayload  { t0_client: number; t1_server: number }
 
 // ── Reconnect payloads ────────────────────────────────────────────────────────
 
