@@ -1,5 +1,10 @@
 @import "@heroui/styles";
 
+html, body, #root {
+  font-family: 'Figtree', system-ui, sans-serif;
+  font-size: 16px;
+}
+
 /* Brand primary — light: #001a9c, dark: #62B1E9 */
 :root,
 .light,

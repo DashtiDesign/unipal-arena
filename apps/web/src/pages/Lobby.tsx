@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { T, Lang } from "../i18n";
 import { socket } from "../socket";
 import { EVENTS } from "@arena/shared";
@@ -18,8 +18,15 @@ interface Props {
   onLeave: () => void;
 }
 
+interface ConfirmDialog {
+  title: string;
+  body: string;
+  confirmLabel: string;
+}
+
 export default function Lobby({ t, lang, session, onSessionUpdate, onLeave }: Props) {
   const { roomCode, playerId, room, arena } = session;
+  const [confirm, setConfirm] = useState<ConfirmDialog | null>(null);
 
   useEffect(() => {
     function onArenaUpdate(payload: ArenaUpdatePayload) {
@@ -32,10 +39,30 @@ export default function Lobby({ t, lang, session, onSessionUpdate, onLeave }: Pr
     };
   }, [onSessionUpdate]);
 
-  function handleLeave() {
+  function performLeave() {
     socket.emit(EVENTS.LEAVE_ROOM, { roomCode });
+    socket.removeAllListeners();
     socket.disconnect();
     onLeave();
+  }
+
+  function handleLeave() {
+    const isHost = room.players.find((p) => p.id === playerId)?.id === room.hostId;
+    const hasOthers = room.players.length > 1;
+
+    if (isHost && hasOthers) {
+      setConfirm({
+        title: "End room?",
+        body: "If you exit as host, the room will close for everyone.",
+        confirmLabel: "End room",
+      });
+    } else {
+      setConfirm({
+        title: "Leave room?",
+        body: "",
+        confirmLabel: "Leave",
+      });
+    }
   }
 
   function handleToggleReady() {
@@ -54,68 +81,114 @@ export default function Lobby({ t, lang, session, onSessionUpdate, onLeave }: Pr
   const me = room.players.find((p) => p.id === playerId);
   const isReady = me?.isReady ?? false;
 
+  const exitButton = (
+    <button
+      className="flex items-center gap-1.5 text-sm font-medium text-(--muted) hover:text-(--foreground) transition-colors py-1 px-2 -ml-2 rounded-lg"
+      onClick={handleLeave}
+      aria-label="Exit room"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M19 12H5M12 19l-7-7 7-7"/>
+      </svg>
+      Exit
+    </button>
+  );
+
+  const confirmOverlay = confirm && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+      <div className="bg-(--surface) rounded-2xl p-6 flex flex-col gap-4 w-full max-w-xs shadow-xl">
+        <h2 className="text-lg font-bold">{confirm.title}</h2>
+        {confirm.body && <p className="text-sm text-(--muted)">{confirm.body}</p>}
+        <div className="flex flex-col gap-2">
+          <Button variant="danger" fullWidth onPress={performLeave}>
+            {confirm.confirmLabel}
+          </Button>
+          <Button variant="outline" fullWidth onPress={() => setConfirm(null)}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
   if (arena.phase === "PRE_ROUND") {
     return (
-      <PreRound
-        t={t}
-        lang={lang}
-        room={room}
-        arena={arena}
-        playerId={playerId}
-        isReady={isReady}
-        onToggleReady={handleToggleReady}
-        onLeave={handleLeave}
-      />
+      <>
+        {confirmOverlay}
+        <PreRound
+          t={t}
+          lang={lang}
+          room={room}
+          arena={arena}
+          playerId={playerId}
+          isReady={isReady}
+          onToggleReady={handleToggleReady}
+          onLeave={handleLeave}
+        />
+      </>
     );
   }
 
   if (arena.phase === "DUELING") {
     return (
-      <InGame
-        t={t}
-        lang={lang}
-        room={room}
-        arena={arena}
-        playerId={playerId}
-        roomCode={roomCode}
-        onLeave={handleLeave}
-      />
+      <>
+        {confirmOverlay}
+        <InGame
+          t={t}
+          lang={lang}
+          room={room}
+          arena={arena}
+          playerId={playerId}
+          roomCode={roomCode}
+          onLeave={handleLeave}
+        />
+      </>
     );
   }
 
   if (arena.phase === "RESULT" && arena.lastResult) {
     return (
-      <DuelResult
-        t={t}
-        playerId={playerId}
-        duelAId={arena.duel?.aId ?? null}
-        duelBId={arena.duel?.bId ?? null}
-        benchedId={arena.benchedId}
-        result={arena.lastResult}
-        gameResult={arena.lastGameResult}
-        room={room}
-        onLeave={handleLeave}
-      />
+      <>
+        {confirmOverlay}
+        <DuelResult
+          t={t}
+          playerId={playerId}
+          duelAId={arena.duel?.aId ?? null}
+          duelBId={arena.duel?.bId ?? null}
+          benchedId={arena.benchedId}
+          result={arena.lastResult}
+          gameResult={arena.lastGameResult}
+          room={room}
+          onLeave={handleLeave}
+        />
+      </>
     );
   }
 
   if (arena.phase === "FINISHED") {
     const lb = [...room.players].sort((a, b) => b.score - a.score).map(({ id, name, score }) => ({ id, name, score }));
     return (
-      <WinnerScreen
-        t={t}
-        playerId={playerId}
-        leaderboard={lb}
-        onPlayAgain={handlePlayAgain}
-        onLeave={handleLeave}
-      />
+      <>
+        {confirmOverlay}
+        <WinnerScreen
+          t={t}
+          playerId={playerId}
+          leaderboard={lb}
+          onPlayAgain={handlePlayAgain}
+          onLeave={handleLeave}
+        />
+      </>
     );
   }
 
   const allReady = room.players.length >= 2 && room.players.every((p) => p.isReady);
 
   return (
-    <main className="flex flex-col items-center px-4 py-8 gap-6 max-w-sm mx-auto">
+    <>
+      {confirmOverlay}
+      <main className="flex flex-col items-center px-4 py-6 gap-6 max-w-sm mx-auto">
+        <div className="self-start">{exitButton}</div>
+
         <Card className="w-full">
           <Card.Content className="flex flex-col items-center gap-2 py-6 px-4">
             <p className="text-sm text-(--muted) uppercase tracking-widest">{t.roomCode}</p>
@@ -178,6 +251,7 @@ export default function Lobby({ t, lang, session, onSessionUpdate, onLeave }: Pr
             {isReady ? `✓ ${t.ready}` : t.ready}
           </Button>
         )}
-    </main>
+      </main>
+    </>
   );
 }

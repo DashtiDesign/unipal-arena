@@ -1,6 +1,6 @@
 import express from "express";
 import { createServer } from "http";
-import { Server } from "socket.io";
+import { Server, Socket } from "socket.io";
 import cors from "cors";
 import { randomUUID } from "crypto";
 import {
@@ -58,11 +58,24 @@ const gameStates = new Map<string, any>();
 const gameTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // Per-room per-player bomb expiry timers: key = `${roomCode}:${playerId}`
 const bombTimers = new Map<string, ReturnType<typeof setTimeout>>();
+// Reverse map: socketId → roomCode for O(1) lookup + cross-join isolation
+const socketRooms = new Map<string, string>();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function freshArena(): ArenaState {
   return { phase: "LOBBY", duel: null, benchedId: null, gameId: 0, startedAt: null, endsAt: null, countdownStartAt: null, gameMeta: null, lastResult: null, lastGameResult: null };
+}
+
+/** Evict a socket from its current room before joining a new one. Prevents cross-join stale state. */
+function evictFromPreviousRoom(socket: Socket) {
+  const prev = socketRooms.get(socket.id);
+  if (prev) {
+    console.log(`[evict] socket=${socket.id} leaving previous room=${prev}`);
+    socket.leave(prev);
+    socketRooms.delete(socket.id);
+    handleLeave(socket.id, prev, "evict");
+  }
 }
 
 function generateRoomCode(): string {
@@ -284,20 +297,22 @@ io.on("connection", (socket) => {
       socket.emit(EVENTS.ROOM_ERROR, { messageKey: "err_name_required", messageText: "Name is required." });
       return;
     }
+    evictFromPreviousRoom(socket);
     const roomCode = generateRoomCode();
     const player: Player = { id: socket.id, name, isReady: false, score: 0 };
     const room: Room = { id: roomCode, hostId: socket.id, players: [player], createdAt: Date.now() };
     rooms.set(roomCode, room);
     arenas.set(roomCode, freshArena());
     socket.join(roomCode);
+    socketRooms.set(socket.id, roomCode);
     socket.emit(EVENTS.ROOM_JOINED, { roomCode, playerId: socket.id, room });
-    console.log(`[room:create] ${roomCode} by "${name}" rooms=${Array.from(rooms.keys()).join(",")}`);
+    console.log(`[room:create] socket=${socket.id} room=${roomCode} name="${name}" rooms=${Array.from(rooms.keys()).join(",")}`);
   });
 
   socket.on(EVENTS.JOIN_ROOM, (payload: JoinRoomPayload) => {
     const name     = (payload?.name ?? "").trim();
     const roomCode = (payload?.roomCode ?? "").trim();
-    console.log(`[room:join] attempt event="${EVENTS.JOIN_ROOM}" payload=${JSON.stringify(payload)} roomCode="${roomCode}" exists=${rooms.has(roomCode)} knownRooms=${Array.from(rooms.keys()).slice(0, 10).join(",") || "(none)"}`);
+    console.log(`[room:join] socket=${socket.id} attempt roomCode="${roomCode}" exists=${rooms.has(roomCode)} knownRooms=${Array.from(rooms.keys()).slice(0, 10).join(",") || "(none)"}`);
     if (!name) {
       socket.emit(EVENTS.ROOM_ERROR, { messageKey: "err_name_required", messageText: "Name is required." });
       return;
@@ -316,22 +331,27 @@ io.on("connection", (socket) => {
       socket.emit(EVENTS.ROOM_ERROR, { messageKey: "err_full", messageText: "Room is full." });
       return;
     }
+    evictFromPreviousRoom(socket);
     const player: Player = { id: socket.id, name, isReady: false, score: 0 };
     room.players.push(player);
     socket.join(roomCode);
+    socketRooms.set(socket.id, roomCode);
     socket.emit(EVENTS.ROOM_JOINED, { roomCode, playerId: socket.id, room });
     socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
     socket.to(roomCode).emit(EVENTS.ROOM_UPDATE, { room });
-    console.log(`[room:join] ${roomCode} by "${name}"`);
+    console.log(`[room:join] socket=${socket.id} room=${roomCode} name="${name}"`);
   });
 
   socket.on(EVENTS.LEAVE_ROOM, (payload: LeaveRoomPayload) => {
+    socketRooms.delete(socket.id);
     handleLeave(socket.id, payload?.roomCode, "explicit");
   });
 
   socket.on(EVENTS.TOGGLE_READY, (payload: ToggleReadyPayload) => {
-    const room  = rooms.get(payload?.roomCode ?? "");
-    const arena = arenas.get(payload?.roomCode ?? "");
+    const rc = (payload?.roomCode ?? "").trim();
+    if (socketRooms.get(socket.id) !== rc) return; // reject stale / cross-room events
+    const room  = rooms.get(rc);
+    const arena = arenas.get(rc);
     if (!room || !arena) return;
     const player = room.players.find((p) => p.id === socket.id);
     if (!player) return;
@@ -357,6 +377,7 @@ io.on("connection", (socket) => {
 
   socket.on(EVENTS.GAME_INPUT, (payload: GameInputPayload) => {
     const roomCode = (payload?.roomCode ?? "").trim();
+    if (socketRooms.get(socket.id) !== roomCode) return; // reject stale / cross-room events
     const arena    = arenas.get(roomCode);
     if (!arena || arena.phase !== "DUELING" || !arena.duel) return;
     if (socket.id !== arena.duel.aId && socket.id !== arena.duel.bId) return;
@@ -417,6 +438,9 @@ io.on("connection", (socket) => {
 
   socket.on(EVENTS.GAME_SYNC, (payload: GameSyncPayload) => {
     const roomCode = (payload?.roomCode ?? "").trim();
+    // Allow GAME_SYNC even if not in socketRooms (reconnecting client) — but reject if tracked to a DIFFERENT room
+    const tracked = socketRooms.get(socket.id);
+    if (tracked && tracked !== roomCode) return;
     const room     = rooms.get(roomCode);
     const arena    = arenas.get(roomCode);
 
@@ -448,8 +472,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on(EVENTS.PLAY_AGAIN, (payload: PlayAgainPayload) => {
-    const room  = rooms.get(payload?.roomCode ?? "");
-    const arena = arenas.get(payload?.roomCode ?? "");
+    const rc = (payload?.roomCode ?? "").trim();
+    if (socketRooms.get(socket.id) !== rc) return; // reject stale / cross-room events
+    const room  = rooms.get(rc);
+    const arena = arenas.get(rc);
     if (!room || !arena || arena.phase !== "FINISHED") return;
     for (const p of room.players) { p.score = 0; p.isReady = false; }
     benchIdx.delete(room.id);
@@ -461,12 +487,13 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    console.log(`[disconnect] socket=${socket.id} room=${socketRooms.get(socket.id) ?? "none"}`);
+    socketRooms.delete(socket.id);
     handleLeave(socket.id);
-    console.log(`[disconnect] ${socket.id}`);
   });
 });
 
-function handleLeave(socketId: string, roomCode?: string, reason: "explicit" | "disconnect" = "disconnect") {
+function handleLeave(socketId: string, roomCode?: string, reason: "explicit" | "disconnect" | "evict" = "disconnect") {
   const targets = roomCode
     ? ([rooms.get(roomCode)].filter(Boolean) as Room[])
     : [...rooms.values()];

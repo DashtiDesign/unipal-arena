@@ -7,6 +7,7 @@ export interface T {
   enterCode: string;
   join: string;
   create: string;
+  back: string;
   playerName: string;
   tagline: string;
   lang: string;
@@ -54,8 +55,9 @@ const en: T = {
   enterCode: "4-digit room code",
   join: "Join",
   create: "Create",
+  back: "Back",
   playerName: "Your name",
-  tagline: "Play. Challenge. Win.",
+  tagline: "May the best player win.",
   lang: "AR",
   installHint: 'Tap Share then "Add to Home Screen" to install.',
   installHintClose: "Dismiss",
@@ -95,8 +97,9 @@ const ar: T = {
   enterCode: "رمز الغرفة (4 أرقام)",
   join: "انضم",
   create: "إنشاء",
+  back: "رجوع",
   playerName: "اسمك",
-  tagline: "العب. تحدَّ. انتصر.",
+  tagline: "لتفز الأفضل.",
   lang: "EN",
   installHint: 'اضغط على مشاركة ثم "إضافة إلى الشاشة الرئيسية" للتثبيت.',
   installHintClose: "إغلاق",

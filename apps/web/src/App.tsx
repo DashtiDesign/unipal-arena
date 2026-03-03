@@ -4,7 +4,6 @@ import Home from "./pages/Home";
 import Lobby from "./pages/Lobby";
 import IosInstallHint from "./components/IosInstallHint";
 import NavBar from "./components/NavBar";
-import { Button } from "@heroui/react";
 import type { Room, ArenaState } from "@arena/shared";
 
 export type Screen = "home" | "lobby";
@@ -53,7 +52,7 @@ export default function App() {
     setSession((prev) => (prev ? { ...prev, room, arena } : prev));
   }
 
-  // ── Compute NavBar content based on current screen/phase ──────────────────
+  // ── Compute NavBar left content based on current screen/phase ─────────────
 
   const arena = session?.arena;
   const isInGame = screen === "lobby" && arena?.phase === "DUELING";
@@ -70,29 +69,20 @@ export default function App() {
         return <span className="text-xs text-(--muted)">{t.duelAnnounce.replace("{a}", a).replace("{b}", b)}</span>;
       })()}
     </div>
-  ) : (
-    <span className="text-xl font-bold tracking-tight">{t.appName}</span>
-  );
-
-  const navRight = (
-    <>
-      <Button variant="ghost" size="sm" onPress={() => setLang(lang === "en" ? "ar" : "en")}>
-        {t.lang}
-      </Button>
-      {screen === "lobby" && (
-        <Button variant="ghost" size="sm" className="text-(--danger)" onPress={onLeave}>
-          ✕
-        </Button>
-      )}
-    </>
-  );
+  ) : null;
 
   return (
     <div
       dir={lang === "ar" ? "rtl" : "ltr"}
       className="min-h-screen bg-(--background)"
     >
-      <NavBar theme={theme} onThemeToggle={onThemeToggle} left={navLeft} right={navRight} />
+      <NavBar
+        theme={theme}
+        onThemeToggle={onThemeToggle}
+        lang={lang}
+        onLangChange={setLang}
+        left={navLeft}
+      />
 
       {screen === "home" && (
         <Home t={t} onJoined={onJoined} />
