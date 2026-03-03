@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(pnpm --filter shared build)",
+      "Bash(pnpm --filter server add ioredis @socket.io/redis-adapter)"
     ]
   }
 }

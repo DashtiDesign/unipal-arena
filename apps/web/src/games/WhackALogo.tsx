@@ -1,3 +1,4 @@
+import { useCallback, useRef, useState } from "react";
 import { GameComponentProps } from "./types";
 import { Chip } from "@heroui/react";
 
@@ -9,6 +10,14 @@ interface Target { id: string; x: number; y: number; isBomb: boolean }
 interface State {
   slots: Record<string, { targets: Target[] }>;
   hits: Record<string, number>;
+}
+
+interface PopAnim {
+  key: number;
+  text: string;
+  x: number;
+  y: number;
+  isBomb: boolean;
 }
 
 function UnipalLogo({ size }: { size: number }) {
@@ -23,6 +32,8 @@ function UnipalLogo({ size }: { size: number }) {
   );
 }
 
+let _popKey = 0;
+
 export default function WhackALogo({ publicState, playerId, opponentId, onInput, remainingMs }: GameComponentProps) {
   const s = publicState as State;
   const myHits  = s.hits[playerId]   ?? 0;
@@ -30,6 +41,32 @@ export default function WhackALogo({ publicState, playerId, opponentId, onInput,
   const mySlot  = s.slots[playerId];
   const targets = mySlot?.targets ?? [];
   const hasBomb = targets.some((t) => t.isBomb);
+
+  // Pop animations: floating text bursts shown on tap
+  const [pops, setPops] = useState<PopAnim[]>([]);
+  const popTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  const spawnPop = useCallback((text: string, x: number, y: number, isBomb: boolean) => {
+    const key = _popKey++;
+    setPops((prev) => [...prev, { key, text, x, y, isBomb }]);
+    const t = setTimeout(() => {
+      setPops((prev) => prev.filter((p) => p.key !== key));
+      popTimers.current.delete(key);
+    }, 1500);
+    popTimers.current.set(key, t);
+  }, []);
+
+  function handleTap(t: Target) {
+    onInput({ targetId: t.id });
+    // Optimistic pop animation
+    const cx = t.x + LOGO_SIZE / 2;
+    const cy = t.y + LOGO_SIZE / 2;
+    if (t.isBomb) {
+      spawnPop("-2", cx, cy, true);
+    } else {
+      spawnPop("+1", cx, cy, false);
+    }
+  }
 
   return (
     <div className="flex flex-col items-center gap-3 py-4 w-full select-none">
@@ -62,7 +99,7 @@ export default function WhackALogo({ publicState, playerId, opponentId, onInput,
                 touchAction: "none",
                 WebkitTapHighlightColor: "transparent",
               }}
-              onPointerDown={(e) => { e.preventDefault(); onInput({ targetId: t.id }); }}
+              onPointerDown={(e) => { e.preventDefault(); handleTap(t); }}
             >
               <div
                 className="w-full h-full flex items-center justify-center rounded-full bg-(--danger)/20 border-2 border-(--danger) animate-pulse"
@@ -82,17 +119,41 @@ export default function WhackALogo({ publicState, playerId, opponentId, onInput,
                 touchAction: "none",
                 WebkitTapHighlightColor: "transparent",
               }}
-              onPointerDown={(e) => { e.preventDefault(); onInput({ targetId: t.id }); }}
+              onPointerDown={(e) => { e.preventDefault(); handleTap(t); }}
             >
               <UnipalLogo size={LOGO_SIZE} />
             </button>
           )
         )}
+
+        {/* Floating pop animations */}
+        {pops.map((p) => (
+          <div
+            key={p.key}
+            className={`absolute pointer-events-none font-bold text-2xl leading-none ${p.isBomb ? "text-(--danger)" : "text-(--success)"}`}
+            style={{
+              left: p.x,
+              top: p.y,
+              transform: "translate(-50%, -50%)",
+              animation: "whack-pop 1.5s ease-out forwards",
+            }}
+          >
+            {p.text}
+          </div>
+        ))}
       </div>
 
       <p className="text-xs text-(--muted)">
         {hasBomb ? "Tap 💣 (−2 pts) or ignore it!" : "Tap the logo (+1 pt) as fast as you can!"}
       </p>
+
+      <style>{`
+        @keyframes whack-pop {
+          0%   { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+          40%  { opacity: 1; transform: translate(-50%, calc(-50% - 24px)) scale(1); }
+          100% { opacity: 0; transform: translate(-50%, calc(-50% - 56px)) scale(0.8); }
+        }
+      `}</style>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { GameComponentProps } from "./types";
 import { Button, Chip, Input, Spinner } from "@heroui/react";
 
@@ -19,12 +19,15 @@ interface PublicState {
 }
 
 const HINT_ICON: Record<Hint, string> = { higher: "⬆️", lower: "⬇️", correct: "✅" };
-const HINT_LABEL: Record<Hint, string> = { higher: "Go higher", lower: "Go lower", correct: "Correct!" };
+const HINT_LABEL: Record<Hint, string> = { higher: "Higher", lower: "Lower", correct: "Correct!" };
 const HINT_CLASS: Record<Hint, string> = {
   higher: "text-(--warning)",
   lower: "text-(--accent)",
   correct: "text-(--success) font-bold",
 };
+
+interface FloatAnim { key: number; hint: Hint }
+let _floatKey = 0;
 
 export default function HigherLower({
   publicState, playerId, opponentId, onInput, remainingMs, privateState,
@@ -32,6 +35,25 @@ export default function HigherLower({
   const s = publicState as PublicState;
   const hints = (privateState ?? []) as HintEvent[];
   const [input, setInput] = useState("");
+
+  // Floating hint animation driven by new server hints
+  const prevHintCountRef = useRef(0);
+  const [floats, setFloats] = useState<FloatAnim[]>([]);
+  const floatTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  if (hints.length > prevHintCountRef.current) {
+    const newHint = hints[hints.length - 1];
+    prevHintCountRef.current = hints.length;
+    const key = _floatKey++;
+    Promise.resolve().then(() => {
+      setFloats((prev) => [...prev, { key, hint: newHint.hint }]);
+      const t = setTimeout(() => {
+        setFloats((prev) => prev.filter((f) => f.key !== key));
+        floatTimers.current.delete(key);
+      }, 1500);
+      floatTimers.current.set(key, t);
+    });
+  }
 
   const iSubmitted = s.submitted[playerId] ?? false;
   const oppSubmitted = s.submitted[opponentId] ?? false;
@@ -55,14 +77,25 @@ export default function HigherLower({
   }
 
   return (
-    <div className="flex flex-col items-center gap-4 py-4 w-full">
+    <div className="flex flex-col items-center gap-4 py-4 w-full relative">
       <div className="flex items-center justify-between w-full px-2">
         <p className="text-base font-semibold">Round {s.round} — Guess 1–100</p>
         <Chip size="sm" color="default" variant="secondary">{Math.ceil(remainingMs / 1000)}s</Chip>
       </div>
 
+      {/* Floating hint text anchored near top-center of component */}
+      {floats.map((f) => (
+        <div
+          key={f.key}
+          className={`absolute left-1/2 top-12 pointer-events-none font-bold text-3xl leading-none z-10 ${HINT_CLASS[f.hint]}`}
+          style={{ animation: "hl-float 1.5s ease-out forwards" }}
+        >
+          {HINT_ICON[f.hint]} {HINT_LABEL[f.hint]}
+        </div>
+      ))}
+
       {hints.length > 0 && (
-        <div className="w-full flex flex-col gap-1 max-h-40 overflow-y-auto">
+        <div className="w-full flex flex-col gap-1 max-h-64 overflow-y-auto">
           {hints.map((h, i) => (
             <div key={i} className={`flex items-center gap-2 text-sm ${HINT_CLASS[h.hint]}`}>
               <span className="text-(--muted) tabular-nums w-16 shrink-0">R{h.round}</span>
@@ -88,7 +121,14 @@ export default function HigherLower({
             onChange={(e) => setInput(e.target.value.replace(/\D/g, "").slice(0, 3))}
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
-          <Button variant="primary" isDisabled={!input} onPress={submit}>✓</Button>
+          <Button
+            variant="primary"
+            isDisabled={!input}
+            onPress={submit}
+            className="h-14 px-6 text-base font-semibold"
+          >
+            ✓
+          </Button>
         </div>
       ) : (
         <div className="flex flex-col items-center gap-2 py-2">
@@ -112,6 +152,14 @@ export default function HigherLower({
         <span>Your guesses: {hints.length}</span>
         <span>Opponent: {oppSubmitted ? "✓ submitted" : "thinking…"}</span>
       </div>
+
+      <style>{`
+        @keyframes hl-float {
+          0%   { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1.1); }
+          40%  { opacity: 1; transform: translateX(-50%) translateY(-20px) scale(1);   }
+          100% { opacity: 0; transform: translateX(-50%) translateY(-50px) scale(0.9); }
+        }
+      `}</style>
     </div>
   );
 }

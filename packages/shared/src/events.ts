@@ -9,6 +9,8 @@ export const CLIENT_EVENTS = {
   // Game
   GAME_INPUT: "game:input",
   GAME_SYNC: "game:sync",
+  // Reconnect
+  PLAYER_REJOIN: "player:rejoin",
 } as const;
 
 // Server -> Client
@@ -23,6 +25,8 @@ export const SERVER_EVENTS = {
   GAME_STATE: "game:state",
   GAME_RESULT: "game:result",
   GAME_PRIVATE: "game:private",
+  // Reconnect
+  PLAYER_REJOIN_ACK: "player:rejoin_ack",
 } as const;
 
 export const EVENTS = { ...CLIENT_EVENTS, ...SERVER_EVENTS } as const;

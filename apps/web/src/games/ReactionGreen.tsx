@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { GameComponentProps } from "./types";
+import { Chip } from "@heroui/react";
 
 interface State {
   triggerAt: number;
+  endsAt: number;
   reacted: Record<string, boolean>;
   earlyTap: Record<string, boolean>;
 }
 
-export default function ReactionGreen({ publicState, playerId, opponentId, onInput }: GameComponentProps) {
+export default function ReactionGreen({ publicState, playerId, opponentId, onInput, remainingMs }: GameComponentProps) {
   const s = publicState as State;
   const [isGreen, setIsGreen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -58,7 +60,10 @@ export default function ReactionGreen({ publicState, playerId, opponentId, onInp
 
   return (
     <div className="flex flex-col items-center gap-4 py-6 w-full select-none">
-      <p className="text-base font-semibold text-center min-h-[1.5rem]">{statusMsg}</p>
+      <div className="flex items-center justify-between w-full px-2">
+        <p className="text-base font-semibold text-center min-h-[1.5rem]">{statusMsg}</p>
+        <Chip size="sm" color="default" variant="secondary">{Math.ceil(remainingMs / 1000)}s</Chip>
+      </div>
 
       <button
         className={`w-full rounded-2xl flex items-center justify-center text-5xl font-bold transition-all active:scale-95 ${bgClass}`}

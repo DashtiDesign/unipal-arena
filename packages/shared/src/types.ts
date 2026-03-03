@@ -28,6 +28,10 @@ export interface ArenaDuel {
   matchId: string; // unique per duel — used by client to detect and drop stale events
 }
 
+export interface RoundDuel extends ArenaDuel {
+  gameMeta: GameMeta;
+}
+
 export interface GameMeta {
   gameDefId: string;
   displayName: { en: string; ar: string };
@@ -37,14 +41,17 @@ export interface GameMeta {
 
 export interface ArenaState {
   phase: ArenaPhase;
+  /** The duel the *receiving client* is participating in. Null if benched. */
   duel: ArenaDuel | null;
+  /** All concurrent duels in the current round (populated during PRE_ROUND and DUELING). */
+  duels: RoundDuel[];
   benchedId: string | null;
   gameId: number;
   startedAt: number | null;
   endsAt: number | null;
   /** Epoch ms when the 3-2-1 countdown started (set when both players ready, before DUELING). Null otherwise. */
   countdownStartAt: number | null;
-  gameMeta: GameMeta | null; // set during PRE_ROUND, kept through DUELING
+  gameMeta: GameMeta | null; // set during PRE_ROUND, kept through DUELING (for the player's own duel)
   lastResult: DuelResultBroadcast | null;
   lastGameResult: GameResultPayload | null;
 }
@@ -94,7 +101,7 @@ export interface ToggleReadyPayload { roomCode: string }
 export interface DuelResultPayload  { roomCode: string; winnerId: string | null; isDraw: boolean }
 export interface PlayAgainPayload   { roomCode: string }
 export interface GameInputPayload   { roomCode: string; payload: unknown }
-export interface GameSyncPayload    { roomCode: string; matchId?: string }
+export interface GameSyncPayload    { roomCode: string; matchId?: string; playerId?: string }
 
 // ── Server -> Client payloads ─────────────────────────────────────────────────
 
@@ -136,3 +143,8 @@ export interface GamePrivatePayload {
   gameId: number;
   data: unknown;
 }
+
+// ── Reconnect payloads ────────────────────────────────────────────────────────
+
+export interface PlayerRejoinPayload    { roomCode: string; playerId: string }
+export interface PlayerRejoinAckPayload { playerId: string; room: Room; arena: ArenaState }

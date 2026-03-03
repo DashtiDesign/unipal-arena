@@ -5,10 +5,8 @@ import cors from "cors";
 import { randomUUID } from "crypto";
 import {
   EVENTS,
-  Room,
   Player,
-  ArenaState,
-  LeaderboardEntry,
+  Room,
   CreateRoomPayload,
   JoinRoomPayload,
   LeaveRoomPayload,
@@ -16,16 +14,38 @@ import {
   PlayAgainPayload,
   GameInputPayload,
   GameSyncPayload,
+  PlayerRejoinPayload,
 } from "@arena/shared";
-import { REGISTRY, nextFromDeck, freshDeck } from "./games/registry";
-import { bombExpiresIn } from "./games/whackALogo";
-
+import { REGISTRY } from "./games/registry";
 import path from "path";
+
+import {
+  rooms, arenas, gameStates, socketRooms,
+  playerSockets, socketPlayers, abandonTimers, resolvedDuels,
+  benchCounts, lastBenched, gameDecks, socketOf,
+} from "./state";
+import {
+  getRedisClients, acquireRoomLock, loadRoomFromRedis,
+  persistRoom, persistArena, persistPlayerSocket,
+} from "./redis";
+import {
+  generateRoomCode, freshArena, broadcastArena, emitRoundUpdate,
+  scheduleRound, startRound, handleLeave, registerSocket, deregisterSocket,
+  personalDuel, createPlayerId, evictFromPreviousRoom,
+} from "./roomManager";
+import {
+  startDuelGame, resolveDuel, clearAllGameTimers, broadcastGameStateForDuel,
+  scheduleBombReBroadcast, startTickLoop,
+} from "./gameEngine";
+import { registerGracefulShutdown } from "./shutdown";
+
+// Suppress unused-import warnings for startDuelGame (used transitively via roomManager)
+void startDuelGame;
+
+// ── Server setup ──────────────────────────────────────────────────────────────
 
 const PORT = Number(process.env.PORT) || 3001;
 const MAX_PLAYERS = 12;
-const WIN_SCORE = 10;
-const RESULT_DELAY_MS = 10000;
 const DEBUG = process.env.DEBUG_LOGS === "1";
 
 const app = express();
@@ -43,245 +63,86 @@ if (process.env.NODE_ENV === "production") {
 const httpServer = createServer(app);
 const allowedOrigins =
   process.env.NODE_ENV === "production"
-    ? false // same-origin; static files are served from this process
+    ? false
     : ["http://localhost:5173", "http://127.0.0.1:5173"];
-const io = new Server(httpServer, { cors: { origin: allowedOrigins } });
 
-// ── State maps ───────────────────────────────────────────────────────────────
+const io = new Server(httpServer, {
+  cors: { origin: allowedOrigins },
+  transports: ["websocket"],   // WebSocket only — no polling (Railway hardening)
+  pingTimeout: 20000,
+  pingInterval: 25000,
+});
 
-const rooms      = new Map<string, Room>();
-const arenas     = new Map<string, ArenaState>();
-const benchIdx   = new Map<string, number>();
-const gameDecks  = new Map<string, string[]>(); // per-room shuffled game deck
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const gameStates = new Map<string, any>();
-const gameTimers = new Map<string, ReturnType<typeof setTimeout>>();
-// Per-room per-player bomb expiry timers: key = `${roomCode}:${playerId}`
-const bombTimers = new Map<string, ReturnType<typeof setTimeout>>();
-// Reverse map: socketId → roomCode for O(1) lookup + cross-join isolation
-const socketRooms = new Map<string, string>();
+// ── Redis adapter (conditional) ───────────────────────────────────────────────
+
+async function setupRedisAdapter(): Promise<void> {
+  if (!process.env.REDIS_URL) {
+    console.log("[redis] REDIS_URL not set — running in single-instance mode");
+    return;
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createAdapter } = require("@socket.io/redis-adapter");
+    const clients = getRedisClients()!;
+    io.adapter(createAdapter(clients.pub, clients.sub));
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { INSTANCE_ID } = require("./redis") as typeof import("./redis");
+    console.log(`[redis] adapter attached — INSTANCE_ID=${INSTANCE_ID}`);
+  } catch (err) {
+    console.error("[redis] adapter setup failed:", err);
+  }
+}
+
+// ── Constants (local to index; game constants live in roomManager) ────────────
+
+// All games now use isResolved?() or tick-based expiry
+const EARLY_RESOLVE_GAMES = new Set<string>([]);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function freshArena(): ArenaState {
-  return { phase: "LOBBY", duel: null, benchedId: null, gameId: 0, startedAt: null, endsAt: null, countdownStartAt: null, gameMeta: null, lastResult: null, lastGameResult: null };
-}
-
-/** Evict a socket from its current room before joining a new one. Prevents cross-join stale state. */
-function evictFromPreviousRoom(socket: Socket) {
-  const prev = socketRooms.get(socket.id);
-  if (prev) {
-    console.log(`[evict] socket=${socket.id} leaving previous room=${prev}`);
-    socket.leave(prev);
-    socketRooms.delete(socket.id);
-    handleLeave(socket.id, prev, "evict");
+/** Re-join an existing player to a room after reconnect. */
+function handleRejoin(socket: Socket, playerId: string, roomCode: string): void {
+  const room  = rooms.get(roomCode)!;
+  const arena = arenas.get(roomCode)!;
+  const player = room.players.find((p) => p.id === playerId);
+  if (!player) {
+    socket.emit(EVENTS.ROOM_ERROR, { messageKey: "err_not_found", messageText: "Player not found." });
+    return;
   }
-}
 
-function generateRoomCode(): string {
-  let code: string;
-  do { code = String(Math.floor(Math.random() * 10000)).padStart(4, "0"); }
-  while (rooms.has(code));
-  return code;
-}
+  // Re-associate new socket with existing stable player identity
+  const oldSocket = playerSockets.get(playerId);
+  if (oldSocket && oldSocket !== socket.id) {
+    socketPlayers.delete(oldSocket);
+    socketRooms.delete(oldSocket);
+  }
+  registerSocket(socket.id, playerId, roomCode);
+  socket.join(roomCode);
+  persistPlayerSocket(playerId, socket.id);
 
-function leaderboard(room: Room): LeaderboardEntry[] {
-  return [...room.players].sort((a, b) => b.score - a.score)
-    .map(({ id, name, score }) => ({ id, name, score }));
-}
+  const playerDuel = personalDuel(arena, playerId);
+  socket.emit(EVENTS.PLAYER_REJOIN_ACK, { playerId, room, arena: { ...arena, duel: playerDuel } });
 
-function broadcastArena(roomCode: string) {
-  const room  = rooms.get(roomCode);
-  const arena = arenas.get(roomCode);
-  if (room && arena) io.to(roomCode).emit(EVENTS.ARENA_UPDATE, { room, arena });
-}
-
-function broadcastGameState(roomCode: string) {
-  const arena = arenas.get(roomCode);
-  if (!arena?.duel) return;
-  const def   = REGISTRY.get(arena.duel.gameDefId);
-  const state = gameStates.get(roomCode);
-  if (!def || !state) return;
-  const remainingMs = arena.endsAt ? Math.max(0, arena.endsAt - Date.now()) : 0;
-  // Emit to the whole Socket.IO room — matchId lets clients discard stale events
-  io.to(roomCode).emit(EVENTS.GAME_STATE, {
-    roomCode,
-    matchId: arena.duel.matchId,
-    gameId: arena.gameId,
-    gameDefId: arena.duel.gameDefId,
-    publicState: def.publicState(state),
-    remainingMs,
-  });
-}
-
-function clearGameTimer(roomCode: string) {
-  const t = gameTimers.get(roomCode);
-  if (t) { clearTimeout(t); gameTimers.delete(roomCode); }
-  // Clear any pending bomb-expiry timers for this room
-  for (const key of [...bombTimers.keys()]) {
-    if (key.startsWith(`${roomCode}:`)) {
-      clearTimeout(bombTimers.get(key));
-      bombTimers.delete(key);
+  // If mid-game, send current game state so client resumes without GAME_SYNC polling
+  if (arena.phase === "DUELING" && playerDuel) {
+    const def   = REGISTRY.get(playerDuel.gameDefId);
+    const state = gameStates.get(playerDuel.matchId);
+    if (def && state) {
+      const remainingMs = arena.endsAt ? Math.max(0, arena.endsAt - Date.now()) : 0;
+      socket.emit(EVENTS.GAME_STATE, {
+        roomCode,
+        matchId: playerDuel.matchId,
+        gameId: arena.gameId,
+        gameDefId: playerDuel.gameDefId,
+        publicState: def.publicState(state),
+        remainingMs,
+      });
     }
   }
+  console.log(`[rejoin] playerId=${playerId} socket=${socket.id} room=${roomCode}`);
 }
 
-// Games that auto-resolve when a winner is found before time expires (v===1 check)
-// All games with "wait for both" or custom logic use isResolved?() on GameDefinition instead
-// All games now use isResolved?() or run to timer expiry — nothing needs the early-resolve speculative check
-const EARLY_RESOLVE_GAMES = new Set<string>([
-  // reaction_green — moved to isResolved?()
-  // quick_maths, emoji_odd_one_out, memory_grid — wait for both players, use isResolved?()
-  // higher_lower, rock_paper_scissors, tic_tac_toe — use isResolved?()
-  // whack_a_logo, tapping_speed, stop_at_10s — run to time expiry
-]);
-
-function resolveGame(roomCode: string) {
-  clearGameTimer(roomCode);
-  const room  = rooms.get(roomCode);
-  const arena = arenas.get(roomCode);
-  if (!room || !arena || !arena.duel) return;
-
-  const def   = REGISTRY.get(arena.duel.gameDefId);
-  const state = gameStates.get(roomCode);
-  if (!def || !state) return;
-
-  const result = def.resolve(state);
-  gameStates.delete(roomCode);
-
-  io.to(roomCode).emit(EVENTS.GAME_RESULT, {
-    roomCode,
-    matchId: arena.duel.matchId,
-    gameId: arena.gameId,
-    gameDefId: arena.duel.gameDefId,
-    result,
-  });
-
-  const { aId, bId } = arena.duel;
-  const deltaScores: Record<string, number> = { [aId]: 0, [bId]: 0 };
-  for (const [id, outcome] of Object.entries(result.outcomeByPlayerId)) {
-    deltaScores[id] = outcome as number;
-  }
-  for (const p of room.players) {
-    if (p.id in deltaScores) p.score += deltaScores[p.id];
-  }
-
-  const topOutcome = Math.max(...Object.values(result.outcomeByPlayerId) as number[]);
-  const arenaWinners = Object.entries(result.outcomeByPlayerId).filter(([, v]) => v === topOutcome);
-  const isDraw = arenaWinners.length > 1;
-  const winnerId = isDraw ? null : arenaWinners[0][0];
-
-  const lb = leaderboard(room);
-  arena.phase = "RESULT";
-  arena.lastResult = { winnerId, isDraw, deltaScores, leaderboard: lb };
-  arena.lastGameResult = {
-    roomCode,
-    matchId: arena.duel.matchId,
-    gameId: arena.gameId,
-    gameDefId: arena.duel.gameDefId,
-    result,
-  };
-  broadcastArena(roomCode);
-  // Keep separate events for clients that may catch them
-  io.to(roomCode).emit(EVENTS.DUEL_RESULT, { winnerId, isDraw, deltaScores, leaderboard: lb });
-
-  const champion = room.players.find((p) => p.score >= WIN_SCORE);
-
-  // Always show RESULT for RESULT_DELAY_MS — even for the final duel
-  const t = setTimeout(() => {
-    const r = rooms.get(roomCode);
-    const a = arenas.get(roomCode);
-    if (!r || !a || a.phase !== "RESULT") return;
-    if (champion) {
-      a.phase = "FINISHED";
-      broadcastArena(roomCode);
-    } else {
-      scheduleDuel(roomCode);
-    }
-  }, RESULT_DELAY_MS);
-  gameTimers.set(roomCode, t);
-}
-
-function scheduleDuel(roomCode: string) {
-  const room    = rooms.get(roomCode)!;
-  const arena   = arenas.get(roomCode)!;
-  const players = room.players;
-  if (players.length < 2) return;
-
-  let benchedId: string | null = null;
-  if (players.length % 2 !== 0) {
-    const prev = benchIdx.get(roomCode) ?? -1;
-    const nextBenchPos = (prev + 1) % players.length;
-    benchIdx.set(roomCode, nextBenchPos);
-    benchedId = players[nextBenchPos].id;
-  }
-
-  const duelers = players.filter((p) => p.id !== benchedId);
-  const aId = duelers[0].id;
-  const bId = duelers[1].id;
-  for (const p of players) p.isReady = p.id === benchedId;
-
-  // Pull next game from per-room deck; auto-reshuffles when exhausted
-  if (!gameDecks.has(roomCode)) gameDecks.set(roomCode, freshDeck());
-  const gameDef = nextFromDeck(gameDecks.get(roomCode)!);
-
-  const matchId = randomUUID();
-
-  arena.phase             = "PRE_ROUND";
-  arena.duel              = { aId, bId, gameDefId: gameDef.id, matchId };
-  arena.gameMeta          = {
-    gameDefId: gameDef.id,
-    displayName: gameDef.displayName,
-    instructions: gameDef.instructions,
-    durationMs: gameDef.durationMs,
-  };
-  arena.benchedId         = benchedId;
-  arena.gameId           += 1;
-  arena.startedAt         = null;
-  arena.endsAt            = null;
-  arena.countdownStartAt  = null;
-  arena.lastResult        = null;
-  arena.lastGameResult    = null;
-
-  broadcastArena(roomCode);
-}
-
-const COUNTDOWN_MS = 3000; // 3-2-1 countdown duration before game starts
-
-function startGame(roomCode: string) {
-  const arena = arenas.get(roomCode);
-  if (!arena?.duel) return;
-  const def = REGISTRY.get(arena.duel.gameDefId);
-  if (!def) return;
-
-  // Broadcast the countdown start so clients can display 3-2-1
-  arena.countdownStartAt = Date.now();
-  broadcastArena(roomCode);
-
-  const t = setTimeout(() => {
-    const a = arenas.get(roomCode);
-    if (!a?.duel) return;
-    const now = Date.now();
-    a.phase     = "DUELING";
-    a.startedAt = now;
-    a.endsAt    = now + def.durationMs;
-
-    const state = def.init([a.duel.aId, a.duel.bId]);
-    gameStates.set(roomCode, state);
-
-    // Phase update first, then initial game state immediately
-    broadcastArena(roomCode);
-    broadcastGameState(roomCode);
-    // Re-broadcast after 150ms to reduce mount-race missed events
-    setTimeout(() => { broadcastArena(roomCode); broadcastGameState(roomCode); }, 150);
-
-    const gameTimer = setTimeout(() => resolveGame(roomCode), def.durationMs);
-    gameTimers.set(roomCode, gameTimer);
-  }, COUNTDOWN_MS);
-  gameTimers.set(roomCode, t);
-}
-
-// ── Socket.IO ─────────────────────────────────────────────────────────────────
+// ── Socket.IO event handlers ──────────────────────────────────────────────────
 
 io.on("connection", (socket) => {
   console.log(`[connect] ${socket.id}`);
@@ -291,28 +152,39 @@ io.on("connection", (socket) => {
     });
   }
 
-  socket.on(EVENTS.CREATE_ROOM, (payload: CreateRoomPayload) => {
+  // ── CREATE_ROOM ──────────────────────────────────────────────────────────────
+
+  socket.on(EVENTS.CREATE_ROOM, async (payload: CreateRoomPayload) => {
     const name = (payload?.name ?? "").trim();
     if (!name) {
       socket.emit(EVENTS.ROOM_ERROR, { messageKey: "err_name_required", messageText: "Name is required." });
       return;
     }
-    evictFromPreviousRoom(socket);
+    evictFromPreviousRoom(socket.id, io);
+
     const roomCode = generateRoomCode();
-    const player: Player = { id: socket.id, name, isReady: false, score: 0 };
-    const room: Room = { id: roomCode, hostId: socket.id, players: [player], createdAt: Date.now() };
+    const playerId = createPlayerId();
+    const player: Player = { id: playerId, name, isReady: false, score: 0 };
+    const room: Room = { id: roomCode, hostId: playerId, players: [player], createdAt: Date.now() };
+
     rooms.set(roomCode, room);
     arenas.set(roomCode, freshArena());
     socket.join(roomCode);
-    socketRooms.set(socket.id, roomCode);
-    socket.emit(EVENTS.ROOM_JOINED, { roomCode, playerId: socket.id, room });
-    console.log(`[room:create] socket=${socket.id} room=${roomCode} name="${name}" rooms=${Array.from(rooms.keys()).join(",")}`);
+    registerSocket(socket.id, playerId, roomCode);
+    await acquireRoomLock(roomCode);
+    persistRoom(roomCode, room);
+
+    socket.emit(EVENTS.ROOM_JOINED, { roomCode, playerId, room });
+    console.log(`[room:create] socket=${socket.id} playerId=${playerId} room=${roomCode} name="${name}"`);
   });
 
-  socket.on(EVENTS.JOIN_ROOM, (payload: JoinRoomPayload) => {
+  // ── JOIN_ROOM ────────────────────────────────────────────────────────────────
+
+  socket.on(EVENTS.JOIN_ROOM, async (payload: JoinRoomPayload) => {
     const name     = (payload?.name ?? "").trim();
     const roomCode = (payload?.roomCode ?? "").trim();
-    console.log(`[room:join] socket=${socket.id} attempt roomCode="${roomCode}" exists=${rooms.has(roomCode)} knownRooms=${Array.from(rooms.keys()).slice(0, 10).join(",") || "(none)"}`);
+    console.log(`[room:join] socket=${socket.id} attempt roomCode="${roomCode}" exists=${rooms.has(roomCode)}`);
+
     if (!name) {
       socket.emit(EVENTS.ROOM_ERROR, { messageKey: "err_name_required", messageText: "Name is required." });
       return;
@@ -321,8 +193,23 @@ io.on("connection", (socket) => {
       socket.emit(EVENTS.ROOM_ERROR, { messageKey: "err_invalid_code", messageText: "Room code must be 4 digits." });
       return;
     }
-    const room  = rooms.get(roomCode);
-    const arena = arenas.get(roomCode);
+
+    let room  = rooms.get(roomCode);
+    let arena = arenas.get(roomCode);
+
+    // Cross-instance recovery: room might be owned by another Railway replica
+    if (!room || !arena) {
+      const data = await loadRoomFromRedis(roomCode);
+      if (data) {
+        rooms.set(roomCode, data.room);
+        arenas.set(roomCode, data.arena);
+        await acquireRoomLock(roomCode);
+        room  = data.room;
+        arena = data.arena;
+        console.log(`[room:join] recovered room=${roomCode} from Redis`);
+      }
+    }
+
     if (!room || !arena) {
       socket.emit(EVENTS.ROOM_ERROR, { messageKey: "err_not_found", messageText: "Room not found." });
       return;
@@ -331,205 +218,261 @@ io.on("connection", (socket) => {
       socket.emit(EVENTS.ROOM_ERROR, { messageKey: "err_full", messageText: "Room is full." });
       return;
     }
-    evictFromPreviousRoom(socket);
-    const player: Player = { id: socket.id, name, isReady: false, score: 0 };
+
+    evictFromPreviousRoom(socket.id, io);
+
+    const playerId = createPlayerId();
+    const player: Player = { id: playerId, name, isReady: false, score: 0 };
     room.players.push(player);
     socket.join(roomCode);
-    socketRooms.set(socket.id, roomCode);
-    socket.emit(EVENTS.ROOM_JOINED, { roomCode, playerId: socket.id, room });
+    registerSocket(socket.id, playerId, roomCode);
+    persistRoom(roomCode, room);
+
+    socket.emit(EVENTS.ROOM_JOINED, { roomCode, playerId, room });
     socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
-    broadcastArena(roomCode);
-    console.log(`[room:join] socket=${socket.id} room=${roomCode} name="${name}"`);
+    broadcastArena(roomCode, io);
+    console.log(`[room:join] socket=${socket.id} playerId=${playerId} room=${roomCode} name="${name}"`);
   });
 
+  // ── LEAVE_ROOM ───────────────────────────────────────────────────────────────
+
   socket.on(EVENTS.LEAVE_ROOM, (payload: LeaveRoomPayload) => {
-    socketRooms.delete(socket.id);
-    handleLeave(socket.id, payload?.roomCode, "explicit");
+    const playerId = socketPlayers.get(socket.id);
+    if (!playerId) return;
+    deregisterSocket(socket.id);
+    handleLeave(playerId, payload?.roomCode, "explicit", io);
   });
+
+  // ── TOGGLE_READY ─────────────────────────────────────────────────────────────
 
   socket.on(EVENTS.TOGGLE_READY, (payload: ToggleReadyPayload) => {
     const rc = (payload?.roomCode ?? "").trim();
-    if (socketRooms.get(socket.id) !== rc) return; // reject stale / cross-room events
+    const playerId = socketPlayers.get(socket.id);
+    if (!playerId || socketRooms.get(socket.id) !== rc) return;
+
     const room  = rooms.get(rc);
     const arena = arenas.get(rc);
     if (!room || !arena) return;
-    const player = room.players.find((p) => p.id === socket.id);
+    const player = room.players.find((p) => p.id === playerId);
     if (!player) return;
 
     if (arena.phase === "LOBBY") {
       player.isReady = !player.isReady;
       const allReady = room.players.length >= 2 && room.players.every((p) => p.isReady);
-      if (allReady) { benchIdx.delete(room.id); scheduleDuel(room.id); return; }
-      broadcastArena(room.id);
+      if (allReady) {
+        benchCounts.delete(room.id);
+        lastBenched.delete(room.id);
+        scheduleRound(room.id, io);
+        return;
+      }
+      broadcastArena(room.id, io);
       return;
     }
 
     if (arena.phase === "PRE_ROUND") {
-      if (!arena.duel) return;
-      if (player.id !== arena.duel.aId && player.id !== arena.duel.bId) return;
+      const inDuel = arena.duels.some((d) => d.aId === playerId || d.bId === playerId);
+      if (!inDuel) return;
       player.isReady = true;
-      const duelA = room.players.find((p) => p.id === arena.duel!.aId);
-      const duelB = room.players.find((p) => p.id === arena.duel!.bId);
-      if (duelA?.isReady && duelB?.isReady) { startGame(room.id); return; }
-      broadcastArena(room.id);
+      const duelerIds = arena.duels.flatMap((d) => [d.aId, d.bId]);
+      const allDuelersReady = duelerIds.every((id) => room.players.find((p) => p.id === id)?.isReady ?? false);
+      if (allDuelersReady) { startRound(room.id, io); return; }
+      emitRoundUpdate(room.id, io);
     }
   });
+
+  // ── GAME_INPUT ───────────────────────────────────────────────────────────────
 
   socket.on(EVENTS.GAME_INPUT, (payload: GameInputPayload) => {
     const roomCode = (payload?.roomCode ?? "").trim();
-    if (socketRooms.get(socket.id) !== roomCode) return; // reject stale / cross-room events
-    const arena    = arenas.get(roomCode);
-    if (!arena || arena.phase !== "DUELING" || !arena.duel) return;
-    if (socket.id !== arena.duel.aId && socket.id !== arena.duel.bId) return;
+    const playerId = socketPlayers.get(socket.id);
+    if (!playerId || socketRooms.get(socket.id) !== roomCode) return;
 
-    const def   = REGISTRY.get(arena.duel.gameDefId);
-    const state = gameStates.get(roomCode);
+    const arena = arenas.get(roomCode);
+    if (!arena || arena.phase !== "DUELING") return;
+
+    const duel = arena.duels.find((d) => d.aId === playerId || d.bId === playerId);
+    if (!duel) return;
+
+    // Guard: duel already resolved (can happen if input races the tick-expiry)
+    const resolved = resolvedDuels.get(roomCode);
+    if (resolved?.has(duel.matchId)) return;
+
+    const matchId = duel.matchId;
+    const def   = REGISTRY.get(duel.gameDefId);
+    const state = gameStates.get(matchId);
     if (!def || !state) return;
 
-    const newState = def.input(state, socket.id, payload.payload);
-    gameStates.set(roomCode, newState);
-    broadcastGameState(roomCode);
+    const newState = def.input(state, playerId, payload.payload);
+    gameStates.set(matchId, newState);
+    broadcastGameStateForDuel(matchId, roomCode, duel, arena.endsAt ?? Date.now(), arena.gameId, io);
 
-    // Schedule a re-broadcast when a whack_a_logo bomb expires so all clients see it disappear
-    if (arena.duel.gameDefId === "whack_a_logo") {
-      for (const pid of [arena.duel.aId, arena.duel.bId]) {
-        const timerKey = `${roomCode}:${pid}`;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const slot = (newState as any).slots?.[pid];
-        if (!slot) continue;
-        const msUntilExpiry = bombExpiresIn(slot);
-        if (msUntilExpiry !== null) {
-          const existing = bombTimers.get(timerKey);
-          if (existing) clearTimeout(existing);
-          bombTimers.set(timerKey, setTimeout(() => {
-            bombTimers.delete(timerKey);
-            const cur = gameStates.get(roomCode);
-            if (!cur) return;
-            broadcastGameState(roomCode);
-          }, msUntilExpiry + 50)); // +50ms buffer for network jitter
-        }
-      }
+    // Bomb re-broadcast scheduling for whack_a_logo
+    if (duel.gameDefId === "whack_a_logo") {
+      scheduleBombReBroadcast(matchId, roomCode, duel, arena.endsAt ?? Date.now(), arena.gameId, newState, io);
     }
 
-    // Send per-player private updates (e.g. hidden hints in higher_lower)
+    // Per-player private updates (e.g. higher_lower hints)
     if (def.privateUpdate) {
-      for (const id of [arena.duel.aId, arena.duel.bId]) {
+      for (const id of [duel.aId, duel.bId]) {
         const priv = def.privateUpdate(newState, id);
         if (priv != null) {
-          io.to(id).emit(EVENTS.GAME_PRIVATE, {
-            matchId: arena.duel.matchId,
-            gameId: arena.gameId,
-            data: priv,
-          });
+          const sid = socketOf(id);
+          if (sid) {
+            io.to(sid).emit(EVENTS.GAME_PRIVATE, {
+              matchId,
+              gameId: arena.gameId,
+              data: priv,
+            });
+          }
         }
       }
     }
 
-    // Custom resolution check (games with complex logic, e.g. round-based or sub-round games)
-    if (def.isResolved?.(newState)) { resolveGame(roomCode); return; }
+    // Instant-resolve check (e.g. ticTacToe win, higherLower correct guess)
+    if (def.isResolved?.(newState)) { resolveDuel(roomCode, duel, io); return; }
 
-    // Standard early-resolve for simple winner-detection games
-    if (EARLY_RESOLVE_GAMES.has(arena.duel.gameDefId)) {
-      const resolved = def.resolve(newState);
-      const hasWinner = Object.values(resolved.outcomeByPlayerId).some((v) => v === 1);
-      if (hasWinner) resolveGame(roomCode);
+    if (EARLY_RESOLVE_GAMES.has(duel.gameDefId)) {
+      const result = def.resolve(newState);
+      const hasWinner = Object.values(result.outcomeByPlayerId).some((v) => v === 1);
+      if (hasWinner) resolveDuel(roomCode, duel, io);
     }
   });
 
+  // ── GAME_SYNC ────────────────────────────────────────────────────────────────
+
   socket.on(EVENTS.GAME_SYNC, (payload: GameSyncPayload) => {
     const roomCode = (payload?.roomCode ?? "").trim();
-    // Allow GAME_SYNC even if not in socketRooms (reconnecting client) — but reject if tracked to a DIFFERENT room
-    const tracked = socketRooms.get(socket.id);
+    const playerId = socketPlayers.get(socket.id) ?? payload?.playerId;
+    const tracked  = socketRooms.get(socket.id);
     if (tracked && tracked !== roomCode) return;
-    const room     = rooms.get(roomCode);
-    const arena    = arenas.get(roomCode);
 
-    console.log(`[game:sync] room=${roomCode} socket=${socket.id} phase=${arena?.phase ?? "none"} matchId=${arena?.duel?.matchId ?? "none"}`);
-
-    // Room not found — nothing to do
+    const room  = rooms.get(roomCode);
+    const arena = arenas.get(roomCode);
+    console.log(`[game:sync] room=${roomCode} socket=${socket.id} phase=${arena?.phase ?? "none"}`);
     if (!room) return;
 
-    // Always push current arena so client has the right phase/matchId
-    if (arena) socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
+    if (arena) {
+      if (arena.phase === "PRE_ROUND" || arena.phase === "DUELING") {
+        const playerDuel = playerId
+          ? (arena.duels.find((d) => d.aId === playerId || d.bId === playerId) ?? null)
+          : null;
+        socket.emit(EVENTS.ARENA_UPDATE, { room, arena: { ...arena, duel: playerDuel } });
+      } else {
+        socket.emit(EVENTS.ARENA_UPDATE, { room, arena });
+      }
+    }
 
-    // Only emit game state when actively dueling with a live game state
-    if (!arena || arena.phase !== "DUELING" || !arena.duel) return;
+    if (!arena || arena.phase !== "DUELING" || !playerId) return;
 
-    const def   = REGISTRY.get(arena.duel.gameDefId);
-    const state = gameStates.get(roomCode);
+    const duel = arena.duels.find((d) => d.aId === playerId || d.bId === playerId);
+    if (!duel) return;
+
+    const def   = REGISTRY.get(duel.gameDefId);
+    const state = gameStates.get(duel.matchId);
     if (!def || !state) return;
 
     const remainingMs = arena.endsAt ? Math.max(0, arena.endsAt - Date.now()) : 0;
-    console.log(`[game:sync] emitting GAME_STATE room=${roomCode} socket=${socket.id} matchId=${arena.duel.matchId}`);
+    console.log(`[game:sync] emitting GAME_STATE room=${roomCode} socket=${socket.id} matchId=${duel.matchId}`);
     socket.emit(EVENTS.GAME_STATE, {
       roomCode,
-      matchId: arena.duel.matchId,
+      matchId: duel.matchId,
       gameId: arena.gameId,
-      gameDefId: arena.duel.gameDefId,
+      gameDefId: duel.gameDefId,
       publicState: def.publicState(state),
       remainingMs,
     });
   });
 
+  // ── PLAY_AGAIN ───────────────────────────────────────────────────────────────
+
   socket.on(EVENTS.PLAY_AGAIN, (payload: PlayAgainPayload) => {
     const rc = (payload?.roomCode ?? "").trim();
-    if (socketRooms.get(socket.id) !== rc) return; // reject stale / cross-room events
+    const playerId = socketPlayers.get(socket.id);
+    if (!playerId || socketRooms.get(socket.id) !== rc) return;
+
     const room  = rooms.get(rc);
     const arena = arenas.get(rc);
     if (!room || !arena || arena.phase !== "FINISHED") return;
+
     for (const p of room.players) { p.score = 0; p.isReady = false; }
-    benchIdx.delete(room.id);
-    clearGameTimer(room.id);
-    gameStates.delete(room.id);
-    gameDecks.delete(room.id); // reset deck for a fresh shuffle next session
+    benchCounts.delete(room.id);
+    lastBenched.delete(room.id);
+    clearAllGameTimers(room.id);
+    resolvedDuels.delete(room.id);
+    gameDecks.delete(room.id);
     arenas.set(room.id, freshArena());
-    broadcastArena(room.id);
+    broadcastArena(room.id, io);
+    persistRoom(room.id, room);
+    persistArena(room.id, arenas.get(room.id)!);
   });
 
-  socket.on("disconnect", () => {
-    console.log(`[disconnect] socket=${socket.id} room=${socketRooms.get(socket.id) ?? "none"}`);
-    socketRooms.delete(socket.id);
-    handleLeave(socket.id);
+  // ── PLAYER_REJOIN ────────────────────────────────────────────────────────────
+
+  socket.on(EVENTS.PLAYER_REJOIN, async (payload: PlayerRejoinPayload) => {
+    const { roomCode, playerId } = payload ?? {};
+    if (!roomCode || !playerId) return;
+
+    // Cancel any pending abandonment timer for this player
+    const pending = abandonTimers.get(playerId);
+    if (pending) { clearTimeout(pending); abandonTimers.delete(playerId); }
+
+    let room  = rooms.get(roomCode);
+    let arena = arenas.get(roomCode);
+
+    // Cross-instance recovery: try Redis if room not in local memory
+    if (!room || !arena) {
+      const data = await loadRoomFromRedis(roomCode);
+      if (data) {
+        rooms.set(roomCode, data.room);
+        arenas.set(roomCode, data.arena);
+        await acquireRoomLock(roomCode);
+        room  = data.room;
+        arena = data.arena;
+        console.log(`[rejoin] recovered room=${roomCode} from Redis for playerId=${playerId}`);
+      }
+    }
+
+    if (!room || !arena) {
+      socket.emit(EVENTS.ROOM_ERROR, { messageKey: "err_not_found", messageText: "Room expired." });
+      return;
+    }
+
+    handleRejoin(socket, playerId, roomCode);
+  });
+
+  // ── disconnect ───────────────────────────────────────────────────────────────
+
+  socket.on("disconnect", (reason) => {
+    const playerId = socketPlayers.get(socket.id);
+    console.log(`[disconnect] socket=${socket.id} playerId=${playerId ?? "none"} reason=${reason}`);
+
+    const { roomCode } = deregisterSocket(socket.id);
+
+    if (!playerId) return;
+
+    // 30s grace window before eviction — allows mid-game reconnect to resume session
+    const t = setTimeout(() => {
+      abandonTimers.delete(playerId);
+      handleLeave(playerId, roomCode, "disconnect", io);
+    }, 30_000);
+    abandonTimers.set(playerId, t);
   });
 });
 
-function handleLeave(socketId: string, roomCode?: string, reason: "explicit" | "disconnect" | "evict" = "disconnect") {
-  const targets = roomCode
-    ? ([rooms.get(roomCode)].filter(Boolean) as Room[])
-    : [...rooms.values()];
+// ── Start ─────────────────────────────────────────────────────────────────────
 
-  for (const room of targets) {
-    const idx = room.players.findIndex((p) => p.id === socketId);
-    if (idx === -1) continue;
-    room.players.splice(idx, 1);
-    console.log(`[handleLeave] room=${room.id} socket=${socketId} reason=${reason}`);
+async function main(): Promise<void> {
+  await setupRedisAdapter();
 
-    if (room.players.length === 0) {
-      rooms.delete(room.id);
-      arenas.delete(room.id);
-      benchIdx.delete(room.id);
-      gameDecks.delete(room.id);
-      clearGameTimer(room.id);
-      gameStates.delete(room.id);
-    } else {
-      if (room.hostId === socketId) room.hostId = room.players[0].id;
-      const arena = arenas.get(room.id)!;
-      if (arena.phase === "PRE_ROUND" || arena.phase === "DUELING") {
-        const duelIds = [arena.duel?.aId, arena.duel?.bId];
-        if (duelIds.includes(socketId)) {
-          console.log(`[handleLeave] duel reset — room=${room.id} socket=${socketId} was dueling`);
-          clearGameTimer(room.id);
-          gameStates.delete(room.id);
-          for (const p of room.players) p.isReady = false;
-          arenas.set(room.id, { ...freshArena(), gameId: arena.gameId });
-        }
-      }
-      broadcastArena(room.id);
-    }
-    break;
-  }
+  const tickHandle = startTickLoop(io);
+  registerGracefulShutdown(httpServer, io, tickHandle);
+
+  httpServer.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
 }
 
-httpServer.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+void main().catch((err: unknown) => {
+  console.error("[startup] fatal:", err);
+  process.exit(1);
 });

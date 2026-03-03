@@ -17,103 +17,132 @@ interface Props {
 const COUNTDOWN_MS = 3000;
 
 export default function PreRound({
-  t, lang, room, arena, playerId, isReady, onToggleReady, onLeave,
+  t, lang, room, arena, playerId, isReady, onToggleReady,
 }: Props) {
   const meta = arena.gameMeta;
-  const duel = arena.duel;
   const isBenched = arena.benchedId === playerId;
-  const amDueler = duel ? (playerId === duel.aId || playerId === duel.bId) : false;
-
-  const playerA = duel ? room.players.find((p) => p.id === duel.aId) : null;
-  const playerB = duel ? room.players.find((p) => p.id === duel.bId) : null;
-  const duelLabel = t.duelAnnounce
-    .replace("{a}", playerA?.name ?? "?")
-    .replace("{b}", playerB?.name ?? "?");
+  const myDuel = arena.duels.find((d) => d.aId === playerId || d.bId === playerId) ?? null;
+  const amDueler = myDuel !== null;
+  const otherDuels = arena.duels.filter((d) => d.aId !== playerId && d.bId !== playerId);
 
   const instrText = meta ? (lang === "ar" ? meta.instructions.ar : meta.instructions.en) : "";
   const gameName  = meta ? (lang === "ar" ? meta.displayName.ar : meta.displayName.en) : "";
 
-  // 3-2-1 countdown — derived locally from countdownStartAt
+  const opponentId = myDuel ? (myDuel.aId === playerId ? myDuel.bId : myDuel.aId) : null;
+  const opponentName = opponentId ? (room.players.find((p) => p.id === opponentId)?.name ?? "?") : null;
+  const benchedPlayer = arena.benchedId ? room.players.find((p) => p.id === arena.benchedId) : null;
+
   const [countdown, setCountdown] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!arena.countdownStartAt) {
-      setCountdown(null);
-      return;
-    }
+    if (!arena.countdownStartAt) { setCountdown(null); return; }
     function tick() {
-      const elapsed = Date.now() - arena.countdownStartAt!;
-      const remaining = Math.ceil((COUNTDOWN_MS - elapsed) / 1000);
-      if (remaining <= 0) {
-        setCountdown(null);
-      } else {
-        setCountdown(remaining);
-      }
+      const remaining = Math.ceil((COUNTDOWN_MS - (Date.now() - arena.countdownStartAt!)) / 1000);
+      setCountdown(remaining <= 0 ? null : remaining);
     }
     tick();
     const id = setInterval(tick, 100);
     return () => clearInterval(id);
   }, [arena.countdownStartAt]);
 
-  // Show full-screen countdown overlay once both are ready
+  function pName(id: string) { return room.players.find((p) => p.id === id)?.name ?? "?"; }
+
   if (countdown !== null) {
     return (
       <main className="flex flex-col items-center justify-center px-4 gap-4 min-h-[60vh]">
         <p className="text-xs text-(--muted) uppercase tracking-widest">{gameName}</p>
         <p className="text-9xl font-bold tabular-nums text-(--accent)">{countdown}</p>
-        <p className="text-sm text-(--muted)">{duelLabel}</p>
+        {amDueler && opponentName && <p className="text-sm text-(--muted)">vs {opponentName}</p>}
+        {isBenched && <p className="text-sm text-(--muted)">{t.benchedThisDuel}</p>}
       </main>
     );
   }
 
   return (
     <main className="flex flex-col items-center px-4 py-6 gap-4 max-w-sm mx-auto">
-        <Card className="w-full">
-          <Card.Content className="flex flex-col items-center gap-2 py-5 px-4">
-            <p className="text-xs text-(--muted) uppercase tracking-widest">🥊 Next Duel</p>
-            <p className="text-2xl font-bold text-center">{duelLabel}</p>
-            {isBenched && <Chip size="sm" color="default" variant="secondary">{t.benchedThisDuel}</Chip>}
+
+      {/* My status card */}
+      <Card className="w-full">
+        <Card.Content className="flex flex-col items-center gap-2 py-5 px-4">
+          {isBenched ? (
+            <>
+              <span className="text-3xl">🪑</span>
+              <p className="text-lg font-bold text-center">{t.benchedThisDuel}</p>
+              <p className="text-sm text-(--muted) text-center">Sit back and watch this round</p>
+            </>
+          ) : amDueler && opponentName ? (
+            <>
+              <p className="text-xs text-(--muted) uppercase tracking-widest">You are playing</p>
+              <p className="text-2xl font-bold text-center">vs {opponentName}</p>
+            </>
+          ) : (
+            <p className="text-base text-(--muted)">Waiting for round to start…</p>
+          )}
+        </Card.Content>
+      </Card>
+
+      {/* Game info */}
+      {meta && (
+        <Card className="w-full bg-(--accent) text-(--accent-foreground)">
+          <Card.Content className="flex flex-col gap-3 py-6 px-4">
+            <p className="text-xs uppercase tracking-widest opacity-70">Game</p>
+            <p className="text-3xl font-bold">{gameName}</p>
+            <hr className="opacity-30" />
+            <p className="text-sm leading-relaxed opacity-90">{instrText}</p>
+            <p className="text-xs opacity-60">⏱ {meta.durationMs / 1000}s</p>
           </Card.Content>
         </Card>
+      )}
 
-        {meta && (
-          <Card className="w-full bg-(--accent) text-(--accent-foreground)">
-            <Card.Content className="flex flex-col gap-3 py-6 px-4">
-              <p className="text-xs uppercase tracking-widest opacity-70">Game</p>
-              <p className="text-3xl font-bold">{gameName}</p>
-              <hr className="opacity-30" />
-              <p className="text-sm leading-relaxed opacity-90">{instrText}</p>
-              <p className="text-xs opacity-60">⏱ {meta.durationMs / 1000}s</p>
-            </Card.Content>
-          </Card>
-        )}
+      {/* Ready button — only for duelers */}
+      {amDueler && (
+        !isReady ? (
+          <Button variant="primary" fullWidth size="lg" onPress={onToggleReady}>
+            {t.ready}
+          </Button>
+        ) : (
+          <div className="flex flex-col items-center gap-2 w-full">
+            <Chip size="lg" color="success" variant="soft">✓ {t.ready}</Chip>
+            <p className="text-sm text-(--muted)">{t.waitingForOpponent}</p>
+          </div>
+        )
+      )}
 
-        {amDueler && !isBenched && (
-          !isReady ? (
-            <Button variant="primary" fullWidth size="lg" onPress={onToggleReady}>
-              {t.ready}
-            </Button>
-          ) : (
-            <div className="flex flex-col items-center gap-2 w-full">
-              <Chip size="lg" color="success" variant="soft">✓ {t.ready}</Chip>
-              <p className="text-sm text-(--muted)">{t.waitingForOpponent}</p>
-            </div>
-          )
-        )}
-
+      {/* Other matches this round */}
+      {(otherDuels.length > 0 || benchedPlayer) && (
         <Card className="w-full">
           <Card.Content className="flex flex-col gap-2 py-4 px-4">
-            <h3 className="font-semibold text-(--muted) uppercase text-xs tracking-widest">{t.players}</h3>
+            <h3 className="font-semibold text-(--muted) uppercase text-xs tracking-widest">Other matches</h3>
             <ul className="flex flex-col gap-1">
-              {[...room.players].sort((a, b) => b.score - a.score).map((p) => (
-                <li key={p.id} className="flex justify-between text-sm">
-                  <span className={p.id === playerId ? "font-bold" : ""}>{p.name}</span>
-                  <span className="tabular-nums">{p.score} {t.pts}</span>
+              {otherDuels.map((d) => (
+                <li key={d.matchId} className="text-sm flex items-center gap-2">
+                  <span className="font-semibold">{pName(d.aId)}</span>
+                  <span className="text-(--muted)">vs</span>
+                  <span className="font-semibold">{pName(d.bId)}</span>
                 </li>
               ))}
+              {benchedPlayer && (
+                <li className="text-sm text-(--muted)">🪑 Benched: {benchedPlayer.name}</li>
+              )}
             </ul>
           </Card.Content>
         </Card>
+      )}
+
+      {/* Leaderboard */}
+      <Card className="w-full">
+        <Card.Content className="flex flex-col gap-2 py-4 px-4">
+          <h3 className="font-semibold text-(--muted) uppercase text-xs tracking-widest">{t.players}</h3>
+          <ul className="flex flex-col gap-1">
+            {[...room.players].sort((a, b) => b.score - a.score).map((p) => (
+              <li key={p.id} className="flex justify-between text-sm">
+                <span className={p.id === playerId ? "font-bold" : ""}>{p.name}</span>
+                <span className="tabular-nums">{p.score} {t.pts}</span>
+              </li>
+            ))}
+          </ul>
+        </Card.Content>
+      </Card>
     </main>
   );
 }

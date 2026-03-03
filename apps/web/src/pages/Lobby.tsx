@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { T, Lang } from "../i18n";
 import { socket } from "../socket";
 import { EVENTS } from "@arena/shared";
-import type { Room, ArenaState, ArenaUpdatePayload } from "@arena/shared";
+import type { Room, ArenaState, ArenaUpdatePayload, PlayerRejoinAckPayload } from "@arena/shared";
+
+const SESSION_KEY = "arena_session";
 import type { Session } from "../App";
 import { Button, Card, Chip, Spinner } from "@heroui/react";
 import PreRound from "./arena/PreRound";
@@ -33,13 +35,22 @@ export default function Lobby({ t, lang, session, onSessionUpdate, onLeave }: Pr
       if (!payload?.room) return;
       onSessionUpdate(payload.room, payload.arena);
     }
+    // Handle reconnect: server confirmed session resume — refresh local state
+    function onRejoinAck(payload: PlayerRejoinAckPayload) {
+      if (!payload?.room) return;
+      onSessionUpdate(payload.room, payload.arena);
+    }
     socket.on(EVENTS.ARENA_UPDATE, onArenaUpdate);
+    socket.on(EVENTS.PLAYER_REJOIN_ACK, onRejoinAck);
     return () => {
       socket.off(EVENTS.ARENA_UPDATE, onArenaUpdate);
+      socket.off(EVENTS.PLAYER_REJOIN_ACK, onRejoinAck);
     };
   }, [onSessionUpdate]);
 
   function performLeave() {
+    // Clear persisted session so reconnect doesn't try to resume this room
+    try { localStorage.removeItem(SESSION_KEY); } catch { /* storage unavailable */ }
     socket.emit(EVENTS.LEAVE_ROOM, { roomCode });
     socket.removeAllListeners();
     socket.disconnect();

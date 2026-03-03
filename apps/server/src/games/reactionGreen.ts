@@ -1,10 +1,13 @@
 import { GameDefinition } from "@arena/shared";
 
 const DRAW_THRESHOLD_MS = 10;
+const ROUND_DURATION_MS = 15_000;
+const MAX_GREEN_DELAY_MS = 9_500; // green must appear before this many ms have elapsed
 
 interface State {
   playerIds: string[];
   triggerAt: number;    // absolute epoch ms when green begins
+  endsAt: number;       // absolute epoch ms when round ends (for client display)
   reactions: Record<string, number>; // playerId -> epoch ms of tap
   earlyTap: Record<string, boolean>; // playerId -> tapped before green
 }
@@ -13,6 +16,7 @@ interface Public {
   // Client derives "triggered" from comparing Date.now() with triggerAt
   // Sending the absolute triggerAt lets the client show the exact moment
   triggerAt: number;
+  endsAt: number;
   reacted: Record<string, boolean>;  // who has tapped (regardless of early/late)
   earlyTap: Record<string, boolean>; // who tapped early (instant loss)
 }
@@ -20,17 +24,19 @@ interface Public {
 const reactionGreen: GameDefinition<State, Public> = {
   id: "reaction_green",
   displayName: { en: "Reaction Green", ar: "ردة الفعل الخضراء" },
-  durationMs: 8000,
+  durationMs: ROUND_DURATION_MS,
   instructions: {
     en: "Tap when it turns GREEN. Tapping too early = instant loss!",
     ar: "انقر عندما يتحول للأخضر. النقر المبكر = خسارة فورية!",
   },
   init(playerIds) {
-    // Random delay between 1500ms and 8000ms (within the 8s window)
-    const delayMs = 1500 + Math.floor(Math.random() * 5000);
+    const now = Date.now();
+    // Green must appear within the first MAX_GREEN_DELAY_MS of the round
+    const delayMs = 1500 + Math.floor(Math.random() * (MAX_GREEN_DELAY_MS - 1500));
     return {
       playerIds,
-      triggerAt: Date.now() + delayMs,
+      triggerAt: now + delayMs,
+      endsAt: now + ROUND_DURATION_MS,
       reactions: {},
       earlyTap: {},
     };
@@ -38,6 +44,7 @@ const reactionGreen: GameDefinition<State, Public> = {
   publicState(s) {
     return {
       triggerAt: s.triggerAt,
+      endsAt: s.endsAt,
       reacted: Object.fromEntries(s.playerIds.map((id) => [id, id in s.reactions || id in s.earlyTap])),
       earlyTap: s.earlyTap,
     };

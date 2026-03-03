@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { T } from "../i18n";
 import { socket } from "../socket";
 import { EVENTS } from "@arena/shared";
-import type { RoomJoinedPayload, RoomErrorPayload, ArenaUpdatePayload } from "@arena/shared";
+import type { RoomJoinedPayload, RoomErrorPayload, ArenaUpdatePayload, PlayerRejoinAckPayload } from "@arena/shared";
 import type { Session } from "../App";
+
+const SESSION_KEY = "arena_session";
 import { Button, Input, Spinner, Alert } from "@heroui/react";
 
 interface Props {
@@ -75,6 +77,7 @@ export default function Home({ t, onJoined }: Props) {
     socket.off(EVENTS.ROOM_JOINED);
     socket.off(EVENTS.ARENA_UPDATE);
     socket.off(EVENTS.ROOM_ERROR);
+    socket.off(EVENTS.PLAYER_REJOIN_ACK);
 
     // Pre-connect eagerly so the socket is likely ready by the time user submits
     if (!socket.connected) socket.connect();
@@ -87,10 +90,12 @@ export default function Home({ t, onJoined }: Props) {
       const url = new URL(window.location.href);
       url.searchParams.delete("room");
       window.history.replaceState({}, "", url.toString());
+      // Persist stable session for reconnect resumption
+      try { localStorage.setItem(SESSION_KEY, JSON.stringify({ roomCode: payload.roomCode, playerId: payload.playerId })); } catch { /* storage unavailable */ }
       pendingSession = { roomCode: payload.roomCode, playerId: payload.playerId, room: payload.room };
       onJoined({
         ...pendingSession,
-        arena: { phase: "LOBBY", duel: null, benchedId: null, gameId: 0, startedAt: null, endsAt: null, countdownStartAt: null, gameMeta: null, lastResult: null, lastGameResult: null },
+        arena: { phase: "LOBBY", duel: null, duels: [], benchedId: null, gameId: 0, startedAt: null, endsAt: null, countdownStartAt: null, gameMeta: null, lastResult: null, lastGameResult: null },
       });
     }
 
@@ -108,6 +113,24 @@ export default function Home({ t, onJoined }: Props) {
       setError((t[key] as string | undefined) ?? t.err_unknown);
     }
 
+    // On every (re)connect: attempt to resume a previous session via PLAYER_REJOIN
+    function onConnect() {
+      try {
+        const saved = localStorage.getItem(SESSION_KEY);
+        if (!saved) return;
+        const { roomCode, playerId } = JSON.parse(saved) as { roomCode: string; playerId: string };
+        if (roomCode && playerId) {
+          socket.emit(EVENTS.PLAYER_REJOIN, { roomCode, playerId });
+        }
+      } catch { /* storage or parse error — ignore */ }
+    }
+
+    // Server confirmed rejoin — navigate straight to Lobby with full state snapshot
+    function onRejoinAck(payload: PlayerRejoinAckPayload) {
+      if (!isMounted.current) return;
+      onJoined({ roomCode: payload.room.id, playerId: payload.playerId, room: payload.room, arena: payload.arena });
+    }
+
     // Reconnect when app comes back to foreground (iOS Safari backgrounding drops WS)
     function onVisibilityChange() {
       if (document.visibilityState === "visible" && !socket.connected) {
@@ -118,6 +141,8 @@ export default function Home({ t, onJoined }: Props) {
     socket.on(EVENTS.ROOM_JOINED, onJoinedEvent);
     socket.on(EVENTS.ARENA_UPDATE, onArenaUpdate);
     socket.on(EVENTS.ROOM_ERROR, onRoomError);
+    socket.on(EVENTS.PLAYER_REJOIN_ACK, onRejoinAck);
+    socket.on("connect", onConnect);
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
@@ -125,6 +150,8 @@ export default function Home({ t, onJoined }: Props) {
       socket.off(EVENTS.ROOM_JOINED, onJoinedEvent);
       socket.off(EVENTS.ARENA_UPDATE, onArenaUpdate);
       socket.off(EVENTS.ROOM_ERROR, onRoomError);
+      socket.off(EVENTS.PLAYER_REJOIN_ACK, onRejoinAck);
+      socket.off("connect", onConnect);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [t, onJoined]);

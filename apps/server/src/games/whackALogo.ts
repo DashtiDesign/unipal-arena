@@ -3,8 +3,8 @@ import { GameDefinition } from "@arena/shared";
 const LOGO_SIZE = 80; // px — matches client logo size
 const AREA_W = 320;   // safe play area width (client uses same constant)
 const AREA_H = 340;   // safe play area height
-const MAX_LOGOS = 3;  // max simultaneous logos per player
-const MAX_BOMBS = 3;  // max bomb appearances per player per match
+const MAX_LOGOS = 2;  // simultaneous logos per player (controls effective spawn density)
+const MAX_BOMBS = 4;  // max bomb appearances per player per match
 const BOMB_CHANCE = 1 / 6;
 const BOMB_LIFETIME_MS = 2000; // bomb auto-disappears after this many ms
 const MIN_DIST = LOGO_SIZE + 8; // minimum centre-to-centre distance between any two targets

@@ -8,8 +8,7 @@ console.log("[socket] SERVER_URL =", SERVER_URL);
 
 export const socket = io(SERVER_URL, {
   autoConnect: false,
-  transports: ["websocket", "polling"],
-  upgrade: true,
+  transports: ["websocket"],  // WebSocket only — matches server config (Railway hardening)
   timeout: 10000,
   reconnection: true,
   reconnectionAttempts: 10,
