@@ -13,6 +13,8 @@ export const CLIENT_EVENTS = {
   CLOCK_PING: "clock:ping",
   // Reconnect
   PLAYER_REJOIN: "player:rejoin",
+  // Room settings (host only)
+  ROOM_SETTINGS_UPDATE: "room:settingsUpdate",
 } as const;
 
 // Server -> Client

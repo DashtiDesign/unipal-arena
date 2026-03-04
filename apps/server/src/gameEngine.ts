@@ -12,7 +12,7 @@ import {
 import { persistArena, persistGameState } from "./redis";
 import { REGISTRY } from "./games/registry";
 import { bombExpiresIn } from "./games/whackALogo";
-import { WIN_SCORE, RESULT_DELAY_MS, leaderboard, scheduleRound, emitRoundUpdate, freshArena } from "./roomManager";
+import { roomWinScore, RESULT_DELAY_MS, leaderboard, scheduleRound, emitRoundUpdate, freshArena } from "./roomManager";
 
 // ── Broadcast ─────────────────────────────────────────────────────────────────
 
@@ -171,6 +171,21 @@ function extractMatchMeta(
     }
     case "tic_tac_toe":
       return {};
+    case "paper_toss": {
+      const scores = stats.scores as Record<string, number> | undefined;
+      const throws = stats.throws as Record<string, number> | undefined;
+      return { scoreSummary: { aValue: `${scores?.[aId] ?? 0}/${throws?.[aId] ?? 0}`, bValue: `${scores?.[bId] ?? 0}/${throws?.[bId] ?? 0}`, label: "baskets" } };
+    }
+    case "darts": {
+      const totals = stats.totals as Record<string, number> | undefined;
+      return { scoreSummary: { aValue: totals?.[aId] ?? 0, bValue: totals?.[bId] ?? 0, label: "points" } };
+    }
+    case "mini_golf": {
+      type ShotResult = { distToHole: number } | null;
+      const shots = stats.shots as Record<string, ShotResult> | undefined;
+      const fmtDist = (s: ShotResult) => s === null ? "No shot" : s.distToHole === 0 ? "Hole-in-one!" : `${(s.distToHole * 100).toFixed(0)}cm`;
+      return { scoreSummary: { aValue: fmtDist(shots?.[aId] ?? null), bValue: fmtDist(shots?.[bId] ?? null), label: "distance" } };
+    }
     default:
       return {};
   }
@@ -307,7 +322,7 @@ export function resolveDuel(roomCode: string, duel: RoundDuel, io: Server): void
   });
   persistArena(roomCode, arena);
 
-  const champion = room.players.find((p) => p.score >= WIN_SCORE);
+  const champion = room.players.find((p) => p.score >= roomWinScore(room));
   const roundKey = `round:${roomCode}`;
   const t = setTimeout(() => {
     const r = rooms.get(roomCode);

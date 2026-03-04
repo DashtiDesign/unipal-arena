@@ -1,16 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { T } from "../i18n";
+import { T, Lang } from "../i18n";
 import { socket } from "../socket";
 import { EVENTS } from "@arena/shared";
 import type { RoomJoinedPayload, RoomErrorPayload, ArenaUpdatePayload, PlayerRejoinAckPayload } from "@arena/shared";
-import type { Session } from "../App";
+import type { Session, Theme } from "../App";
 
 export const SESSION_KEY = "arena_session";
-import { Button, Input, Spinner, Alert } from "@heroui/react";
+import { Button, Input, Spinner, Alert, Card } from "@heroui/react";
+import SettingsDropdown from "../components/SettingsDropdown";
 
 interface Props {
   t: T;
+  lang: Lang;
+  theme: Theme;
   onJoined: (session: Session) => void;
+  onThemeToggle: () => void;
+  onLangChange: (l: Lang) => void;
 }
 
 type View = "menu" | "create" | "join";
@@ -72,7 +77,14 @@ function connectAndEmit(emit: () => void, timeoutMs = 8000): Promise<void> {
   });
 }
 
-export default function Home({ t, onJoined }: Props) {
+function getLogoSrc(lang: Lang, theme: Theme): string {
+  if (lang === "en" && theme === "light") return "/logo-en-light.svg";
+  if (lang === "en" && theme === "dark")  return "/logo-en-dark.svg";
+  if (lang === "ar" && theme === "light") return "/logo-ar-light.svg";
+  return "/logo-ar-dark.svg";
+}
+
+export default function Home({ t, lang, theme, onJoined, onThemeToggle, onLangChange }: Props) {
   const [view, setView] = useState<View>(() => (getDeepLinkCode() ? "join" : "menu"));
   const [playerName, setPlayerName] = useState("");
   const [roomCode, setRoomCode] = useState(getDeepLinkCode);
@@ -213,17 +225,28 @@ export default function Home({ t, onJoined }: Props) {
     setView(v);
   }
 
+  const logoSrc = getLogoSrc(lang, theme);
+
+  const topBar = (
+    <div className="flex items-center justify-between px-4 pt-4 pb-2">
+      <img src={logoSrc} alt="Unipal Arena" className="h-8 w-auto object-contain object-left" key={logoSrc} />
+      <SettingsDropdown t={t} lang={lang} theme={theme} onThemeToggle={onThemeToggle} onLangChange={onLangChange} />
+    </div>
+  );
+
   if (view === "menu") {
     return (
-      <main className="px-4 pt-10 pb-8 flex flex-col gap-8 max-w-sm mx-auto">
-        <div className="flex flex-col gap-2">
+      <main className="pb-8 flex flex-col gap-6 max-w-sm mx-auto">
+        {topBar}
+
+        <div className="flex flex-col gap-2 px-4">
           <h1 className="text-4xl font-extrabold tracking-tight">{t.appName}</h1>
           <p className="text-base text-(--muted)">{t.tagline}</p>
         </div>
 
         {/* Manual rejoin banner — only shown if a previous session exists in localStorage */}
         {savedSession && (
-          <div className="flex flex-col gap-2 p-4 rounded-2xl border border-(--border) bg-(--surface-secondary)">
+          <div className="mx-4 flex flex-col gap-2 p-4 rounded-2xl border border-(--border) bg-(--surface-secondary)">
             <p className="text-sm font-semibold">
               You were in room <span className="font-mono text-(--accent)">{savedSession.roomCode}</span>
             </p>
@@ -238,54 +261,105 @@ export default function Home({ t, onJoined }: Props) {
           </div>
         )}
 
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 px-4">
           <Button variant="primary" fullWidth size="lg" onPress={() => goTo("create")}>{t.createRoom}</Button>
           <Button variant="outline" fullWidth size="lg" onPress={() => goTo("join")}>{t.joinRoom}</Button>
         </div>
 
-        <div className="border-t border-(--border)" />
-
-        <div className="flex flex-col gap-4">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-(--muted)">How it works</h3>
-          <ul className="flex flex-col gap-4">
-            <li className="flex gap-3 items-start">
-              <span className="text-xl shrink-0">🎮</span>
-              <span className="text-sm"><strong>10 mini-games</strong> — quick reflex &amp; brain challenges played 1-vs-1</span>
-            </li>
-            <li className="flex gap-3 items-start">
-              <span className="text-xl shrink-0">🔄</span>
-              <span className="text-sm"><strong>Every player duels every other</strong> — the arena cycles through all matchups</span>
-            </li>
-            <li className="flex gap-3 items-start">
-              <span className="text-xl shrink-0">🏅</span>
-              <span className="text-sm"><strong>Scoring</strong> — win earns 1 pt, draw earns 0.5 pts, loss earns 0</span>
-            </li>
-            <li className="flex gap-3 items-start">
-              <span className="text-xl shrink-0">🪑</span>
-              <span className="text-sm"><strong>Odd players?</strong> — one player sits out each round fairly</span>
-            </li>
-            <li className="flex gap-3 items-start">
-              <span className="text-xl shrink-0">🏆</span>
-              <span className="text-sm"><strong>Champion</strong> — the player with the most points wins</span>
-            </li>
-          </ul>
-        </div>
+        <Card className="mx-4">
+          <Card.Content className="flex flex-col gap-4 p-4">
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-(--muted)">How it works</h3>
+            <ul className="flex flex-col gap-4">
+              <li className="flex gap-3 items-start">
+                <span className="text-xl shrink-0">🎮</span>
+                <span className="text-sm"><strong>13 mini-games</strong> — quick reflex &amp; brain challenges played 1-vs-1</span>
+              </li>
+              <li className="flex gap-3 items-start">
+                <span className="text-xl shrink-0">🔄</span>
+                <span className="text-sm"><strong>Every player duels every other</strong> — the arena cycles through all matchups</span>
+              </li>
+              <li className="flex gap-3 items-start">
+                <span className="text-xl shrink-0">🏅</span>
+                <span className="text-sm"><strong>Scoring</strong> — win earns 1 pt, draw earns 0.5 pts, loss earns 0</span>
+              </li>
+              <li className="flex gap-3 items-start">
+                <span className="text-xl shrink-0">🪑</span>
+                <span className="text-sm"><strong>Odd players?</strong> — one player sits out each round fairly</span>
+              </li>
+              <li className="flex gap-3 items-start">
+                <span className="text-xl shrink-0">🏆</span>
+                <span className="text-sm"><strong>Champion</strong> — the player with the most points wins</span>
+              </li>
+            </ul>
+          </Card.Content>
+        </Card>
       </main>
     );
   }
 
   if (view === "create") {
     return (
-      <main className="px-4 pt-6 pb-8 flex flex-col gap-6 max-w-sm mx-auto">
+      <main className="pb-8 flex flex-col gap-6 max-w-sm mx-auto">
+        {topBar}
+        <div className="px-4 flex flex-col gap-6">
+          <Button variant="outline" size="sm" onPress={() => goTo("menu")} className="self-start">
+            ← {t.back}
+          </Button>
+          <h2 className="text-2xl font-bold">{t.createRoom}</h2>
+          {error && (
+            <Alert status="danger">
+              <Alert.Content><Alert.Title>{error}</Alert.Title></Alert.Content>
+            </Alert>
+          )}
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">{t.playerName}</label>
+            <Input
+              type="text"
+              fullWidth
+              className="h-12"
+              value={playerName}
+              autoFocus
+              onChange={(e) => setPlayerName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+            />
+          </div>
+          <Button variant="primary" fullWidth size="lg" isDisabled={!playerName.trim() || loading} onPress={handleCreate}>
+            {loading ? <Spinner size="sm" /> : t.create}
+          </Button>
+        </div>
+      </main>
+    );
+  }
+
+  // join view — code first, then name
+  return (
+    <main className="pb-8 flex flex-col gap-6 max-w-sm mx-auto">
+      {topBar}
+      <div className="px-4 flex flex-col gap-6">
         <Button variant="outline" size="sm" onPress={() => goTo("menu")} className="self-start">
           ← {t.back}
         </Button>
-        <h2 className="text-2xl font-bold">{t.createRoom}</h2>
+        <h2 className="text-2xl font-bold">{t.joinRoom}</h2>
         {error && (
           <Alert status="danger">
             <Alert.Content><Alert.Title>{error}</Alert.Title></Alert.Content>
           </Alert>
         )}
+        <div className="flex flex-col gap-2">
+          <label className="text-sm font-medium">{t.enterCode}</label>
+          <Input
+            type="tel"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={4}
+            fullWidth
+            className="h-12 tracking-widest text-center text-2xl font-mono"
+            value={roomCode}
+            autoFocus
+            onChange={(e) => setRoomCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            onKeyDown={(e) => e.key === "Enter" && handleJoin()}
+          />
+        </div>
         <div className="flex flex-col gap-2">
           <label className="text-sm font-medium">{t.playerName}</label>
           <Input
@@ -293,59 +367,14 @@ export default function Home({ t, onJoined }: Props) {
             fullWidth
             className="h-12"
             value={playerName}
-            autoFocus
             onChange={(e) => setPlayerName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+            onKeyDown={(e) => e.key === "Enter" && handleJoin()}
           />
         </div>
-        <Button variant="primary" fullWidth size="lg" isDisabled={!playerName.trim() || loading} onPress={handleCreate}>
-          {loading ? <Spinner size="sm" /> : t.create}
+        <Button variant="primary" fullWidth size="lg" isDisabled={!playerName.trim() || roomCode.length !== 4 || loading} onPress={handleJoin}>
+          {loading ? <Spinner size="sm" /> : t.join}
         </Button>
-      </main>
-    );
-  }
-
-  // join view — code first, then name
-  return (
-    <main className="px-4 pt-6 pb-8 flex flex-col gap-6 max-w-sm mx-auto">
-      <Button variant="outline" size="sm" onPress={() => goTo("menu")} className="self-start">
-        ← {t.back}
-      </Button>
-      <h2 className="text-2xl font-bold">{t.joinRoom}</h2>
-      {error && (
-        <Alert status="danger">
-          <Alert.Content><Alert.Title>{error}</Alert.Title></Alert.Content>
-        </Alert>
-      )}
-      <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium">{t.enterCode}</label>
-        <Input
-          type="tel"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          maxLength={4}
-          fullWidth
-          className="h-12 tracking-widest text-center text-2xl font-mono"
-          value={roomCode}
-          autoFocus
-          onChange={(e) => setRoomCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
-          onKeyDown={(e) => e.key === "Enter" && handleJoin()}
-        />
       </div>
-      <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium">{t.playerName}</label>
-        <Input
-          type="text"
-          fullWidth
-          className="h-12"
-          value={playerName}
-          onChange={(e) => setPlayerName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleJoin()}
-        />
-      </div>
-      <Button variant="primary" fullWidth size="lg" isDisabled={!playerName.trim() || roomCode.length !== 4 || loading} onPress={handleJoin}>
-        {loading ? <Spinner size="sm" /> : t.join}
-      </Button>
     </main>
   );
 }

@@ -23,6 +23,11 @@ export interface T {
   hostLabel: string;
   startGame: string;
   waitingForPlayers: string;
+  // settings
+  settings: string;
+  gameSettings: string;
+  winScoreLabel: string;     // "Win at"
+  minGamesError: string;     // "Select at least 5 games"
   // arena – ready check
   duelAnnounce: string;   // "{a} vs {b}"
   tapToReady: string;
@@ -48,6 +53,32 @@ export interface T {
   err_unknown: string;
 }
 
+/** Per-game display metadata for the settings UI (client-side only). */
+export interface GameMeta {
+  id: string;
+  name: { en: string; ar: string };
+  desc: { en: string; ar: string };
+  experimental?: true;
+}
+
+export const GAME_META: GameMeta[] = [
+  // ── Main games ──────────────────────────────────────────────────────────────
+  { id: "quick_maths",         name: { en: "Quick Maths",         ar: "رياضيات سريعة"     }, desc: { en: "Solve arithmetic fast",               ar: "حل العمليات الحسابية بسرعة"     } },
+  { id: "tapping_speed",       name: { en: "Tapping Speed",       ar: "سرعة النقر"        }, desc: { en: "Tap as fast as you can",              ar: "انقر بأسرع ما يمكن"              } },
+  { id: "reaction_green",      name: { en: "Reaction Time",       ar: "زمن رد الفعل"      }, desc: { en: "Tap the moment the screen turns green",ar: "انقر فور تحوّل الشاشة للأخضر"   } },
+  { id: "memory_grid",         name: { en: "Memory Grid",         ar: "شبكة الذاكرة"      }, desc: { en: "Remember the flashed pattern",        ar: "تذكّر النمط المُومض"              } },
+  { id: "rock_paper_scissors", name: { en: "Rock Paper Scissors", ar: "حجر ورقة مقص"      }, desc: { en: "Classic best-of-three showdown",      ar: "المواجهة الكلاسيكية أفضل ثلاث"   } },
+  { id: "higher_lower",        name: { en: "Higher or Lower",     ar: "أعلى أم أقل"       }, desc: { en: "Guess the secret number",             ar: "خمّن الرقم السري"                } },
+  { id: "tic_tac_toe",         name: { en: "Tic-Tac-Toe",         ar: "إكس أو"            }, desc: { en: "Get three in a row",                  ar: "احصل على ثلاثة في صف"            } },
+  { id: "emoji_odd_one_out",   name: { en: "Emoji Odd One Out",   ar: "الإيموجي الغريب"   }, desc: { en: "Find the different emoji",            ar: "جد الإيموجي المختلف"             } },
+  { id: "stop_at_10s",         name: { en: "Stop at 10s",         ar: "أوقف عند 10 ثوانٍ" }, desc: { en: "Stop the timer as close to 10s as possible", ar: "أوقف المؤقت أقرب ما يمكن لـ10 ثوانٍ" } },
+  { id: "whack_a_logo",        name: { en: "Whack-a-Logo",        ar: "اضرب اللوغو"       }, desc: { en: "Tap logos, dodge bombs",              ar: "انقر اللوغو وتجنّب القنابل"       } },
+  // ── Experimental games (OFF by default; host must enable in Game Settings) ──
+  { id: "paper_toss", experimental: true, name: { en: "Paper Toss",  ar: "رمي الورقة"  }, desc: { en: "Flick paper into the bin",           ar: "ارمِ الورقة في السلة"             } },
+  { id: "darts",      experimental: true, name: { en: "Darts",       ar: "رمي السهام"  }, desc: { en: "Aim and throw 3 darts at the board", ar: "صوّب وارمِ 3 سهام على اللوحة"    } },
+  { id: "mini_golf",  experimental: true, name: { en: "Mini Golf",   ar: "غولف مصغّر"  }, desc: { en: "Sink the ball in one shot",          ar: "أدخل الكرة في الحفرة بضربة واحدة" } },
+];
+
 const en: T = {
   appName: "Unipal Arena",
   createRoom: "Create Room",
@@ -70,6 +101,10 @@ const en: T = {
   hostLabel: "host",
   startGame: "Start Game",
   waitingForPlayers: "Waiting for players…",
+  settings: "Settings",
+  gameSettings: "Game Settings",
+  winScoreLabel: "Win at",
+  minGamesError: "Select at least 5 games",
   duelAnnounce: "{a} vs {b}",
   tapToReady: "Tap Ready when you're set!",
   waitingForOpponent: "Waiting for opponent…",
@@ -112,6 +147,10 @@ const ar: T = {
   hostLabel: "المضيف",
   startGame: "ابدأ اللعبة",
   waitingForPlayers: "في انتظار اللاعبين…",
+  settings: "الإعدادات",
+  gameSettings: "إعدادات الألعاب",
+  winScoreLabel: "الفوز عند",
+  minGamesError: "اختر 5 ألعاب على الأقل",
   duelAnnounce: "{a} ضد {b}",
   tapToReady: "اضغط جاهز عندما تكون مستعداً!",
   waitingForOpponent: "في انتظار المنافس…",

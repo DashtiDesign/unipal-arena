@@ -3,7 +3,6 @@ import { Lang, getT } from "./i18n";
 import Home from "./pages/Home";
 import Lobby from "./pages/Lobby";
 import IosInstallHint from "./components/IosInstallHint";
-import NavBar from "./components/NavBar";
 import type { Room, ArenaState } from "@arena/shared";
 
 export type Screen = "home" | "lobby";
@@ -52,48 +51,31 @@ export default function App() {
     setSession((prev) => (prev ? { ...prev, room, arena } : prev));
   }
 
-  // ── Compute NavBar left content based on current screen/phase ─────────────
-
-  const arena = session?.arena;
-  const isInGame = screen === "lobby" && arena?.phase === "DUELING";
-
-  const navLeft = isInGame && arena?.gameMeta ? (
-    <div className="flex flex-col">
-      <span className="text-base font-bold leading-tight">
-        {lang === "ar" ? arena.gameMeta.displayName.ar : arena.gameMeta.displayName.en}
-      </span>
-      {arena.duel && session && (() => {
-        const players = session.room.players;
-        const a = players.find((p) => p.id === arena.duel!.aId)?.name ?? "?";
-        const b = players.find((p) => p.id === arena.duel!.bId)?.name ?? "?";
-        return <span className="text-xs text-(--muted)">{t.duelAnnounce.replace("{a}", a).replace("{b}", b)}</span>;
-      })()}
-    </div>
-  ) : null;
-
   return (
     <div
       dir={lang === "ar" ? "rtl" : "ltr"}
       className="min-h-screen bg-(--background)"
     >
-      <NavBar
-        theme={theme}
-        onThemeToggle={onThemeToggle}
-        lang={lang}
-        onLangChange={setLang}
-        left={navLeft}
-      />
-
       {screen === "home" && (
-        <Home t={t} onJoined={onJoined} />
+        <Home
+          t={t}
+          lang={lang}
+          theme={theme}
+          onJoined={onJoined}
+          onThemeToggle={onThemeToggle}
+          onLangChange={setLang}
+        />
       )}
       {screen === "lobby" && session && (
         <Lobby
           t={t}
           lang={lang}
+          theme={theme}
           session={session}
           onSessionUpdate={onSessionUpdate}
           onLeave={onLeave}
+          onThemeToggle={onThemeToggle}
+          onLangChange={setLang}
         />
       )}
       <IosInstallHint t={t} />

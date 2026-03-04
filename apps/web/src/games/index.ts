@@ -9,6 +9,9 @@ import TicTacToe from "./TicTacToe";
 import EmojiOddOneOut from "./EmojiOddOneOut";
 import StopAt10s from "./StopAt10s";
 import WhackALogo from "./WhackALogo";
+import PaperToss from "./PaperToss";
+import Darts from "./Darts";
+import MiniGolf from "./MiniGolf";
 
 const ALL: GameRegistryEntry[] = [
   { id: "quick_maths",        component: QuickMaths },
@@ -21,6 +24,9 @@ const ALL: GameRegistryEntry[] = [
   { id: "emoji_odd_one_out",  component: EmojiOddOneOut },
   { id: "stop_at_10s",        component: StopAt10s },
   { id: "whack_a_logo",       component: WhackALogo },
+  { id: "paper_toss",         component: PaperToss },
+  { id: "darts",              component: Darts },
+  { id: "mini_golf",          component: MiniGolf },
 ];
 
 export const GAME_REGISTRY = new Map<string, GameRegistryEntry>(

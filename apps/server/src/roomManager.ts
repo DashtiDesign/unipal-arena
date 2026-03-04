@@ -6,21 +6,47 @@ import type {
   ArenaDuel,
   RoundDuel,
   LeaderboardEntry,
+  RoomSettings,
+  WinScoreOption,
 } from "@arena/shared";
-import { EVENTS } from "@arena/shared";
+import { EVENTS, WIN_SCORE_OPTIONS, MIN_ENABLED_GAMES, EXPERIMENTAL_GAME_IDS } from "@arena/shared";
 import {
   rooms, arenas, benchCounts, lastBenched, gameDecks, lastGameDefIds,
   resolvedDuels, socketRooms, socketPlayers, playerSockets,
   socketOf,
 } from "./state";
 import { persistRoom, persistArena } from "./redis";
-import { REGISTRY, nextFromDeck, freshDeck } from "./games/registry";
+import { REGISTRY, MAIN_GAME_IDS, nextFromDeck, freshDeck } from "./games/registry";
 import { randomUUID } from "crypto";
 import { clearAllGameTimers } from "./gameEngine";
 
-export const WIN_SCORE = 10;
+export const DEFAULT_WIN_SCORE: WinScoreOption = 10;
 export const RESULT_DELAY_MS = 6000;
 export const COUNTDOWN_MS = 3000;
+
+/** Room-level win score — reads from room.settings, falls back to DEFAULT_WIN_SCORE. */
+export function roomWinScore(room: Room): number {
+  return room.settings?.winScore ?? DEFAULT_WIN_SCORE;
+}
+
+/** Default room settings — only main games enabled, win score 10. */
+export function defaultRoomSettings(): RoomSettings {
+  return { enabledGameIds: [...MAIN_GAME_IDS], winScore: DEFAULT_WIN_SCORE };
+}
+
+/** Validate and apply new settings. Returns error string or null if valid. */
+export function validateRoomSettings(settings: unknown, playerId: string, room: Room): string | null {
+  if (room.hostId !== playerId) return "only host can change settings";
+  if (!settings || typeof settings !== "object") return "invalid settings";
+  const s = settings as Partial<RoomSettings>;
+  if (!Array.isArray(s.enabledGameIds)) return "enabledGameIds must be an array";
+  // Strip unknown ids gracefully — filter rather than reject, then validate count
+  const validIds = (s.enabledGameIds as string[]).filter((id) => REGISTRY.has(id));
+  const mainCount = validIds.filter((id) => !EXPERIMENTAL_GAME_IDS.includes(id)).length;
+  if (mainCount < MIN_ENABLED_GAMES) return `minimum ${MIN_ENABLED_GAMES} main games required`;
+  if (!WIN_SCORE_OPTIONS.includes(s.winScore as WinScoreOption)) return "winScore must be 10, 15, or 20";
+  return null;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -137,8 +163,18 @@ export function scheduleRound(roomCode: string, io: Server): void {
   }
 
   // Same game for all duels in this round — never repeat the last game played
-  if (!gameDecks.has(roomCode)) gameDecks.set(roomCode, freshDeck());
-  const gameDef = nextFromDeck(gameDecks.get(roomCode)!, lastGameDefIds.get(roomCode));
+  // Use room's enabledGameIds to build/filter the deck; fall back to main games only
+  const enabledIds = room.settings?.enabledGameIds ?? MAIN_GAME_IDS;
+  if (!gameDecks.has(roomCode)) gameDecks.set(roomCode, freshDeck(enabledIds));
+  // If deck is now empty or contains only disabled games, reshuffle with current enabledIds
+  const deck = gameDecks.get(roomCode)!;
+  const validDeck = deck.filter((id) => enabledIds.includes(id));
+  if (validDeck.length === 0) {
+    gameDecks.set(roomCode, freshDeck(enabledIds));
+  } else if (validDeck.length !== deck.length) {
+    gameDecks.set(roomCode, validDeck);
+  }
+  const gameDef = nextFromDeck(gameDecks.get(roomCode)!, lastGameDefIds.get(roomCode), enabledIds);
   lastGameDefIds.set(roomCode, gameDef.id);
   const gameMeta = {
     gameDefId: gameDef.id,

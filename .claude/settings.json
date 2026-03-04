@@ -4,7 +4,8 @@
       "Bash(node -e \":*)",
       "Bash(pnpm --filter shared build)",
       "Bash(pnpm --filter server add ioredis @socket.io/redis-adapter)",
-      "Bash(file \"/c/Users/Ali Dashti/Documents/Code/unipal-arena/apps/web/public\"/*.svg)"
+      "Bash(file \"/c/Users/Ali Dashti/Documents/Code/unipal-arena/apps/web/public\"/*.svg)",
+      "Bash(cd c:UsersAli DashtiDocumentsCodeunipal-arena)"
     ]
   }
 }

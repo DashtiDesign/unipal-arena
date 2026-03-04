@@ -232,6 +232,77 @@ function buildBreakdown(match: MatchResultEntry, myId: string): BreakdownCard | 
       };
     }
 
+    case "paper_toss": {
+      const scores = stats.scores as Record<string, number> | undefined;
+      const throws = stats.throws as Record<string, number> | undefined;
+      const myS  = scores?.[myIdUsed]  ?? 0;
+      const oppS = scores?.[oppIdUsed] ?? 0;
+      const myT  = throws?.[myIdUsed]  ?? 0;
+      const oppT = throws?.[oppIdUsed] ?? 0;
+      const wind = stats.wind as { wx: number; wy: number } | undefined;
+      const windSpeed = wind ? Math.sqrt(wind.wx * wind.wx + wind.wy * wind.wy).toFixed(1) : null;
+      const reason = isDraw
+        ? "Same baskets — draw"
+        : iWon ? "More baskets" : `${oppName} scored more baskets`;
+      return {
+        rows: [
+          { label: myName,  value: `${myS} / ${myT} throws`,  winner: iWon  && !isDraw },
+          { label: oppName, value: `${oppS} / ${oppT} throws`, winner: oppWon && !isDraw },
+        ],
+        reason,
+        answerBlock: windSpeed ? (
+          <div className="mt-3 text-sm text-(--muted)">Wind: {windSpeed}</div>
+        ) : undefined,
+      };
+    }
+
+    case "darts": {
+      type DartThrow = { score: number; zone: string };
+      const totals = stats.totals as Record<string, number> | undefined;
+      const throws = stats.throws as Record<string, DartThrow[]> | undefined;
+      const myTotal  = totals?.[myIdUsed]  ?? 0;
+      const oppTotal = totals?.[oppIdUsed] ?? 0;
+      const myThrows  = throws?.[myIdUsed]  ?? [];
+      const oppThrows = throws?.[oppIdUsed] ?? [];
+      const fmtThrows = (arr: DartThrow[]) => arr.map((t) => `${t.zone}(${t.score})`).join(", ") || "—";
+      return {
+        rows: [
+          { label: myName,  value: `${myTotal} pts`,  winner: iWon  && !isDraw },
+          { label: oppName, value: `${oppTotal} pts`, winner: oppWon && !isDraw },
+        ],
+        reason: isDraw ? "Same score — draw" : iWon ? "Higher score" : `${oppName} scored higher`,
+        answerBlock: (
+          <div className="mt-3 flex flex-col gap-1 text-xs text-(--muted)">
+            <span>{myName}: {fmtThrows(myThrows)}</span>
+            <span>{oppName}: {fmtThrows(oppThrows)}</span>
+          </div>
+        ),
+      };
+    }
+
+    case "mini_golf": {
+      type ShotResult = { distToHole: number; power: number } | null;
+      const shots = stats.shots as Record<string, ShotResult> | undefined;
+      const courseName = stats.courseName as string | undefined;
+      const myShot  = shots?.[myIdUsed]  ?? null;
+      const oppShot = shots?.[oppIdUsed] ?? null;
+      const fmtDist = (s: ShotResult) =>
+        s === null ? "No shot" : s.distToHole === 0 ? "Hole-in-one! ⛳" : `${(s.distToHole * 100).toFixed(0)}cm from hole`;
+      const reason = isDraw
+        ? "Same distance — draw"
+        : iWon ? "Closer to hole" : `${oppName} was closer to hole`;
+      return {
+        rows: [
+          { label: myName,  value: fmtDist(myShot),  winner: iWon  && !isDraw },
+          { label: oppName, value: fmtDist(oppShot), winner: oppWon && !isDraw },
+        ],
+        reason,
+        answerBlock: courseName ? (
+          <div className="mt-3 text-sm text-(--muted)">Course: {courseName}</div>
+        ) : undefined,
+      };
+    }
+
     default:
       return null;
   }

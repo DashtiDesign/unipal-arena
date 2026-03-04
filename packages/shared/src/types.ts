@@ -7,11 +7,34 @@ export interface Player {
   clockOffsetMs: number;
 }
 
+/** Allowed winning score values */
+export const WIN_SCORE_OPTIONS = [10, 15, 20] as const;
+export type WinScoreOption = typeof WIN_SCORE_OPTIONS[number];
+
+/** Minimum number of MAIN games that must be enabled */
+export const MIN_ENABLED_GAMES = 5;
+
+/**
+ * Experimental games are hidden from the default rotation.
+ * The lobby host must explicitly enable them in Game Settings.
+ */
+export const EXPERIMENTAL_GAME_IDS: ReadonlyArray<string> = [
+  "paper_toss",
+  "darts",
+  "mini_golf",
+] as const;
+
+export interface RoomSettings {
+  enabledGameIds: string[];   // subset of all known game IDs; main games must have >= MIN_ENABLED_GAMES
+  winScore: WinScoreOption;   // tournament ends when a player reaches this score
+}
+
 export interface Room {
   id: string; // 4-digit string e.g. "0472"
   hostId: string;
   players: Player[];
   createdAt: number;
+  settings: RoomSettings;
 }
 
 // ── Arena ────────────────────────────────────────────────────────────────────
@@ -186,3 +209,7 @@ export interface ClockPongPayload  { t0_client: number; t1_server: number }
 
 export interface PlayerRejoinPayload    { roomCode: string; playerId: string }
 export interface PlayerRejoinAckPayload { playerId: string; room: Room; arena: ArenaState }
+
+// ── Room settings payloads ────────────────────────────────────────────────────
+
+export interface UpdateRoomSettingsPayload { roomCode: string; settings: RoomSettings }

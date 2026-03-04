@@ -1,4 +1,4 @@
-import { GameDefinition } from "@arena/shared";
+import { GameDefinition, EXPERIMENTAL_GAME_IDS } from "@arena/shared";
 import quickMaths from "./quickMaths";
 import tappingSpeed from "./tappingSpeed";
 import reactionGreen from "./reactionGreen";
@@ -9,6 +9,9 @@ import ticTacToe from "./ticTacToe";
 import emojiOddOneOut from "./emojiOddOneOut";
 import stopAt10s from "./stopAt10s";
 import whackALogo from "./whackALogo";
+import paperToss from "./paperToss";
+import darts from "./darts";
+import miniGolf from "./miniGolf";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ALL: GameDefinition<any, any>[] = [
@@ -22,6 +25,9 @@ const ALL: GameDefinition<any, any>[] = [
   emojiOddOneOut,
   stopAt10s,
   whackALogo,
+  paperToss,
+  darts,
+  miniGolf,
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -30,6 +36,11 @@ export const REGISTRY = new Map<string, GameDefinition<any, any>>(
 );
 
 export const ALL_GAME_IDS: string[] = ALL.map((g) => g.id);
+
+/** IDs of games in the default rotation (excludes experimental). */
+export const MAIN_GAME_IDS: string[] = ALL_GAME_IDS.filter(
+  (id) => !EXPERIMENTAL_GAME_IDS.includes(id)
+);
 
 /** Fisher-Yates shuffle in place */
 function shuffleIds(ids: string[]): string[] {
@@ -41,18 +52,20 @@ function shuffleIds(ids: string[]): string[] {
   return a;
 }
 
-export function freshDeck(): string[] {
-  return shuffleIds(ALL_GAME_IDS);
+export function freshDeck(enabledIds?: string[]): string[] {
+  const ids = enabledIds ? enabledIds.filter((id) => REGISTRY.has(id)) : ALL_GAME_IDS;
+  return shuffleIds(ids.length > 0 ? ids : ALL_GAME_IDS);
 }
 
 /**
  * Pop the next game id from the deck. If the deck is empty, reshuffle a fresh
  * one and pop from that. Mutates the passed-in array.
  * If `lastId` is provided, skip that id (never repeat the same game back-to-back).
+ * If `enabledIds` is provided, uses them when reshuffling an empty deck.
  */
-export function nextFromDeck(deck: string[], lastId?: string): GameDefinition {
+export function nextFromDeck(deck: string[], lastId?: string, enabledIds?: string[]): GameDefinition {
   if (deck.length === 0) {
-    const fresh = freshDeck();
+    const fresh = freshDeck(enabledIds);
     deck.push(...fresh);
   }
   // If the next candidate matches lastId and there are other games available, skip it.

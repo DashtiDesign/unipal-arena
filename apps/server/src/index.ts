@@ -15,6 +15,7 @@ import {
   GameInputPayload,
   GameSyncPayload,
   PlayerRejoinPayload,
+  UpdateRoomSettingsPayload,
 } from "@arena/shared";
 import { REGISTRY } from "./games/registry";
 import path from "path";
@@ -32,6 +33,7 @@ import {
   generateRoomCode, freshArena, broadcastArena, emitRoundUpdate,
   scheduleRound, startRound, handleLeave, registerSocket, deregisterSocket,
   personalDuel, createPlayerId, evictFromPreviousRoom,
+  defaultRoomSettings, validateRoomSettings,
 } from "./roomManager";
 import {
   startDuelGame, resolveDuel, clearAllGameTimers, broadcastGameStateForDuel,
@@ -165,7 +167,7 @@ io.on("connection", (socket) => {
     const roomCode = generateRoomCode();
     const playerId = createPlayerId();
     const player: Player = { id: playerId, name, isReady: false, score: 0, clockOffsetMs: 0 };
-    const room: Room = { id: roomCode, hostId: playerId, players: [player], createdAt: Date.now() };
+    const room: Room = { id: roomCode, hostId: playerId, players: [player], createdAt: Date.now(), settings: defaultRoomSettings() };
 
     rooms.set(roomCode, room);
     arenas.set(roomCode, freshArena());
@@ -422,6 +424,22 @@ io.on("connection", (socket) => {
     broadcastArena(room.id, io);
     persistRoom(room.id, room);
     persistArena(room.id, arenas.get(room.id)!);
+  });
+
+  // ── ROOM_SETTINGS_UPDATE ─────────────────────────────────────────────────────
+
+  socket.on(EVENTS.ROOM_SETTINGS_UPDATE, (payload: UpdateRoomSettingsPayload) => {
+    const rc = (payload?.roomCode ?? "").trim();
+    const playerId = socketPlayers.get(socket.id);
+    if (!playerId || socketRooms.get(socket.id) !== rc) return;
+    const room  = rooms.get(rc);
+    const arena = arenas.get(rc);
+    if (!room || !arena || arena.phase !== "LOBBY") return;
+    const err = validateRoomSettings(payload?.settings, playerId, room);
+    if (err) return;
+    room.settings = payload.settings;
+    persistRoom(rc, room);
+    broadcastArena(rc, io);
   });
 
   // ── PLAYER_REJOIN ────────────────────────────────────────────────────────────
