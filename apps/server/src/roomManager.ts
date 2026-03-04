@@ -19,7 +19,7 @@ import { randomUUID } from "crypto";
 import { clearAllGameTimers } from "./gameEngine";
 
 export const WIN_SCORE = 10;
-export const RESULT_DELAY_MS = 10000;
+export const RESULT_DELAY_MS = 6000;
 export const COUNTDOWN_MS = 3000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

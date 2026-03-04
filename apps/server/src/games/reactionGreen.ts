@@ -5,6 +5,10 @@ const ROUND_DURATION_MS = 15_000;
 // Green appears between 1000ms and 5000ms after game start (within first 5s, server-authoritative)
 const GREEN_MIN_DELAY_MS = 1000;
 const GREEN_MAX_DELAY_MS = 5000;
+// Grace window: absorbs clock-sync residual jitter and render-pipeline latency.
+// A tap that arrives up to EARLY_TAP_GRACE_MS before triggerAt is treated as valid (not early).
+// This does NOT allow true early taps — 16ms ≈ one render frame, within legitimate jitter range.
+const EARLY_TAP_GRACE_MS = 16;
 
 interface State {
   playerIds: string[];
@@ -59,12 +63,21 @@ const reactionGreen: GameDefinition<State, Public> = {
     const tapAt = typeof p.eventServerTime === "number" ? p.eventServerTime : Date.now();
 
     if (process.env.DEBUG_REACTION === "1") {
-      console.log(`[reaction_green] playerId=${playerId} tapAt=${tapAt} triggerAt=${s.triggerAt} delta=${tapAt - s.triggerAt}ms displayMs=${p.displayReactionMs ?? "n/a"}`);
+      const delta = tapAt - s.triggerAt;
+      console.log(
+        `[reaction_green] playerId=${playerId}` +
+        ` tapAt=${tapAt} triggerAt=${s.triggerAt}` +
+        ` delta=${delta}ms grace=${EARLY_TAP_GRACE_MS}ms` +
+        ` displayMs=${p.displayReactionMs ?? "n/a"}` +
+        ` verdict=${delta < -EARLY_TAP_GRACE_MS ? "EARLY" : "OK"}`
+      );
     }
 
-    if (tapAt < s.triggerAt) {
+    // Allow taps that arrive up to EARLY_TAP_GRACE_MS before triggerAt —
+    // this absorbs clock-sync residual jitter and one render-frame of pipeline latency.
+    if (tapAt < s.triggerAt - EARLY_TAP_GRACE_MS) {
       if (process.env.DEBUG_REACTION === "1") {
-        console.log(`[reaction_green] EARLY TAP playerId=${playerId} early by ${s.triggerAt - tapAt}ms`);
+        console.log(`[reaction_green] EARLY TAP playerId=${playerId} early by ${s.triggerAt - tapAt}ms (grace=${EARLY_TAP_GRACE_MS}ms)`);
       }
       return { ...s, earlyTap: { ...s.earlyTap, [playerId]: true } };
     }

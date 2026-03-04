@@ -14,6 +14,8 @@ export default function TappingSpeed({ publicState, playerId, onInput, remaining
   const [floats, setFloats] = useState<FloatAnim[]>([]);
   const floatTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const buttonRef = useRef<HTMLButtonElement>(null);
+  // Only one active pointer allowed — prevents multi-touch firing multiple taps
+  const activePointerRef = useRef<number | null>(null);
 
   const spawnFloat = useCallback((clientX: number, clientY: number) => {
     const rect = buttonRef.current?.getBoundingClientRect();
@@ -32,13 +34,19 @@ export default function TappingSpeed({ publicState, playerId, onInput, remaining
   function handlePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
     e.preventDefault();
     if (s.done) return;
+    // Ignore additional fingers — only the first pointer down counts
+    if (activePointerRef.current !== null) return;
+    activePointerRef.current = e.pointerId;
     setPressed(true);
     spawnFloat(e.clientX, e.clientY);
     onInput({});
   }
 
-  function handlePointerUp() {
-    setPressed(false);
+  function handlePointerUp(e: React.PointerEvent<HTMLButtonElement>) {
+    if (activePointerRef.current === e.pointerId) {
+      activePointerRef.current = null;
+      setPressed(false);
+    }
   }
 
   return (
@@ -65,6 +73,7 @@ export default function TappingSpeed({ publicState, playerId, onInput, remaining
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
           onPointerLeave={handlePointerUp}
+          onPointerCancel={handlePointerUp}
         >
           {s.done ? "⏱" : "TAP!"}
         </button>

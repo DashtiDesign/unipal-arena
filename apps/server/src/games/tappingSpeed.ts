@@ -2,9 +2,13 @@ import { GameDefinition } from "@arena/shared";
 
 const DEBUG = process.env.DEBUG_LOGS === "1";
 
+// Minimum milliseconds between accepted taps per player — prevents multi-touch counting as multiple taps
+const TAP_DEBOUNCE_MS = 40;
+
 interface State {
   playerIds: string[];
   taps: Record<string, number>;
+  lastTapAt: Record<string, number>; // playerId → server epoch ms of last accepted tap
   done: boolean; // set to true after time expires (resolved server-side)
 }
 
@@ -26,6 +30,7 @@ const tappingSpeed: GameDefinition<State, Public> = {
     return {
       playerIds,
       taps: Object.fromEntries(playerIds.map((id) => [id, 0])),
+      lastTapAt: {},
       done: false,
     };
   },
@@ -35,9 +40,15 @@ const tappingSpeed: GameDefinition<State, Public> = {
   },
   input(s, playerId) {
     if (s.done) return s;
+    const now = Date.now();
+    const last = s.lastTapAt[playerId] ?? 0;
+    if (now - last < TAP_DEBOUNCE_MS) {
+      if (DEBUG) console.log(`[tapping_speed] debounced tap playerId=${playerId} gap=${now - last}ms`);
+      return s; // reject tap — too soon (multi-touch or rapid double-fire)
+    }
     const next = (s.taps[playerId] ?? 0) + 1;
     if (DEBUG) console.log(`[tapping_speed] tap playerId=${playerId} count=${next}`);
-    return { ...s, taps: { ...s.taps, [playerId]: next } };
+    return { ...s, taps: { ...s.taps, [playerId]: next }, lastTapAt: { ...s.lastTapAt, [playerId]: now } };
   },
   resolve(s) {
     const [a, b] = s.playerIds;
