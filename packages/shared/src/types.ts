@@ -5,6 +5,20 @@ export interface Player {
   score: number;
   /** Server-computed clock offset: eventServerTime = clientNowMs + clockOffsetMs */
   clockOffsetMs: number;
+  /** "connected" when actively connected; "disconnected" during the 60s grace window */
+  connectionStatus: "connected" | "disconnected";
+  /** Epoch ms when this player disconnected (only set when connectionStatus = "disconnected") */
+  disconnectedAt?: number;
+  /** Epoch ms after which the player is moved to room.disconnectedPlayers */
+  reconnectDeadlineAt?: number;
+}
+
+/** Snapshot of a player who exceeded the 60s reconnect window and was evicted from active list. */
+export interface DisconnectedPlayer {
+  id: string;
+  name: string;
+  score: number;
+  disconnectedAt: number;
 }
 
 /** Allowed winning score values */
@@ -35,6 +49,8 @@ export interface Room {
   players: Player[];
   createdAt: number;
   settings: RoomSettings;
+  /** Players who exceeded the 60s reconnect window; can rejoin with same playerId to restore score. */
+  disconnectedPlayers: DisconnectedPlayer[];
 }
 
 // ── Arena ────────────────────────────────────────────────────────────────────

@@ -23,6 +23,8 @@ export interface T {
   hostLabel: string;
   startGame: string;
   waitingForPlayers: string;
+  disconnected: string;
+  leftPlayers: string;
   // settings
   settings: string;
   gameSettings: string;
@@ -101,6 +103,8 @@ const en: T = {
   hostLabel: "host",
   startGame: "Start Game",
   waitingForPlayers: "Waiting for players…",
+  disconnected: "Disconnected",
+  leftPlayers: "Left",
   settings: "Settings",
   gameSettings: "Game Settings",
   winScoreLabel: "Win at",
@@ -147,6 +151,8 @@ const ar: T = {
   hostLabel: "المضيف",
   startGame: "ابدأ اللعبة",
   waitingForPlayers: "في انتظار اللاعبين…",
+  disconnected: "انقطع الاتصال",
+  leftPlayers: "غادروا",
   settings: "الإعدادات",
   gameSettings: "إعدادات الألعاب",
   winScoreLabel: "الفوز عند",

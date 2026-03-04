@@ -388,7 +388,8 @@ export default function Lobby({ t, lang, theme, session, onSessionUpdate, onLeav
     );
   }
 
-  const allReady = room.players.length >= 2 && room.players.every((p) => p.isReady);
+  const connected = room.players.filter((p) => p.connectionStatus !== "disconnected");
+  const allReady = connected.length >= 2 && connected.every((p) => p.isReady);
 
   return (
     <>
@@ -426,8 +427,9 @@ export default function Lobby({ t, lang, theme, session, onSessionUpdate, onLeav
               <ul className="flex flex-col gap-1">
                 {room.players.map((player) => {
                   const playerIsHost = player.id === room.hostId;
+                  const isDisconnected = player.connectionStatus === "disconnected";
                   return (
-                    <li key={player.id} className="flex items-center justify-between gap-3 py-2">
+                    <li key={player.id} className={`flex items-center justify-between gap-3 py-2 ${isDisconnected ? "opacity-60" : ""}`}>
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         <span className="truncate text-base font-semibold">{player.name}</span>
                         {playerIsHost && (
@@ -436,18 +438,37 @@ export default function Lobby({ t, lang, theme, session, onSessionUpdate, onLeav
                           </Chip>
                         )}
                       </div>
-                      <Chip
-                        size="sm"
-                        variant={player.isReady ? "primary" : "secondary"}
-                        color={player.isReady ? "success" : "default"}
-                        className="shrink-0"
-                      >
-                        {player.isReady ? t.ready : t.notReady}
-                      </Chip>
+                      {isDisconnected ? (
+                        <Chip size="sm" variant="primary" color="danger" className="shrink-0">
+                          {t.disconnected}
+                        </Chip>
+                      ) : (
+                        <Chip
+                          size="sm"
+                          variant={player.isReady ? "primary" : "secondary"}
+                          color={player.isReady ? "success" : "default"}
+                          className="shrink-0"
+                        >
+                          {player.isReady ? t.ready : t.notReady}
+                        </Chip>
+                      )}
                     </li>
                   );
                 })}
               </ul>
+              {room.disconnectedPlayers && room.disconnectedPlayers.length > 0 && (
+                <>
+                  <p className="text-xs text-(--muted) uppercase tracking-widest mt-1">{t.leftPlayers}</p>
+                  <ul className="flex flex-col gap-1">
+                    {room.disconnectedPlayers.map((player) => (
+                      <li key={player.id} className="flex items-center justify-between gap-3 py-1 opacity-40">
+                        <span className="truncate text-sm font-medium">{player.name}</span>
+                        <span className="text-xs text-(--muted)">{player.score} pts</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </Card.Content>
           </Card>
 

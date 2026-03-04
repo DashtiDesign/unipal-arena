@@ -111,6 +111,20 @@ export async function loadRoomFromRedis(code: string): Promise<{ room: Room; are
   try {
     const room  = JSON.parse(roomJson)  as Room;
     const arena = JSON.parse(arenaJson) as ArenaState;
+    // Forward-compat: older persisted rooms may lack these fields
+    if (!Array.isArray(room.disconnectedPlayers)) room.disconnectedPlayers = [];
+    for (const p of room.players) {
+      if (!p.connectionStatus) p.connectionStatus = "connected";
+    }
+    // On recovery: evict players whose reconnect deadline has already passed
+    const now = Date.now();
+    const expired = room.players.filter(
+      (p) => p.connectionStatus === "disconnected" && p.reconnectDeadlineAt != null && p.reconnectDeadlineAt <= now,
+    );
+    for (const p of expired) {
+      room.players.splice(room.players.indexOf(p), 1);
+      room.disconnectedPlayers.push({ id: p.id, name: p.name, score: p.score, disconnectedAt: p.disconnectedAt ?? now });
+    }
     return { room, arena };
   } catch {
     return null;

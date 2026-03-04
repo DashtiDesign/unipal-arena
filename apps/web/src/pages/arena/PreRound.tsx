@@ -147,18 +147,39 @@ export default function PreRound({
         </Card>
       )}
 
-      {/* Leaderboard */}
+      {/* Players + connection status */}
       <Card className="w-full">
         <Card.Content className="flex flex-col gap-2 py-4 px-4">
           <h3 className="font-semibold text-(--muted) uppercase text-xs tracking-widest">{t.players}</h3>
           <ul className="flex flex-col gap-1">
-            {[...room.players].sort((a, b) => b.score - a.score).map((p) => (
-              <li key={p.id} className="flex justify-between text-sm">
-                <span className={p.id === playerId ? "font-bold" : ""}>{p.name}</span>
-                <span className="tabular-nums">{p.score} {t.pts}</span>
-              </li>
-            ))}
+            {[...room.players].sort((a, b) => b.score - a.score).map((p) => {
+              const isDisconnected = p.connectionStatus === "disconnected";
+              return (
+                <li key={p.id} className={`flex items-center justify-between gap-2 text-sm ${isDisconnected ? "opacity-60" : ""}`}>
+                  <span className={p.id === playerId ? "font-bold truncate" : "truncate"}>{p.name}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isDisconnected && (
+                      <Chip size="sm" variant="primary" color="danger">{t.disconnected}</Chip>
+                    )}
+                    <span className="tabular-nums text-(--muted)">{p.score} {t.pts}</span>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
+          {room.disconnectedPlayers && room.disconnectedPlayers.length > 0 && (
+            <>
+              <p className="text-xs text-(--muted) uppercase tracking-widest mt-1">{t.leftPlayers}</p>
+              <ul className="flex flex-col gap-1">
+                {room.disconnectedPlayers.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between gap-2 text-sm opacity-40">
+                    <span className="truncate">{p.name}</span>
+                    <span className="tabular-nums text-(--muted)">{p.score} {t.pts}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </Card.Content>
       </Card>
     </main>

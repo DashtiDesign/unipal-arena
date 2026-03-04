@@ -8,6 +8,7 @@ import type {
   LeaderboardEntry,
   RoomSettings,
   WinScoreOption,
+  DisconnectedPlayer,
 } from "@arena/shared";
 import { EVENTS, WIN_SCORE_OPTIONS, MIN_ENABLED_GAMES, EXPERIMENTAL_GAME_IDS } from "@arena/shared";
 import {
@@ -58,8 +59,10 @@ export function generateRoomCode(): string {
 }
 
 export function leaderboard(room: Room): LeaderboardEntry[] {
-  return [...room.players].sort((a, b) => b.score - a.score)
-    .map(({ id, name, score }) => ({ id, name, score }));
+  // Include disconnected (evicted) players so their scores appear on the results screen
+  const active = room.players.map(({ id, name, score }) => ({ id, name, score }));
+  const evicted = room.disconnectedPlayers.map(({ id, name, score }) => ({ id, name, score }));
+  return [...active, ...evicted].sort((a, b) => b.score - a.score);
 }
 
 export function freshArena(): ArenaState {
@@ -130,8 +133,13 @@ function chooseBenched(roomCode: string, players: Player[]): string {
 export function scheduleRound(roomCode: string, io: Server): void {
   const room    = rooms.get(roomCode)!;
   const arena   = arenas.get(roomCode)!;
-  const players = room.players;
-  if (players.length < 2) return;
+  // Only schedule connected players into new rounds; disconnected players may rejoin later
+  const players = room.players.filter((p) => p.connectionStatus !== "disconnected");
+  if (players.length < 2) {
+    // Not enough connected players — stay in RESULT/current phase; will retry when player rejoins
+    console.log(`[scheduleRound] skipped room=${roomCode} — only ${players.length} connected player(s)`);
+    return;
+  }
 
   // Ensure bench counts exist for all current players
   let counts = benchCounts.get(roomCode);
@@ -292,25 +300,67 @@ export function handleLeave(
       resolvedDuels.delete(room.id);
     } else {
       if (room.hostId === playerId) room.hostId = room.players[0].id;
-      const arena = arenas.get(room.id)!;
-      if (arena.phase === "PRE_ROUND" || arena.phase === "DUELING") {
-        const wasInDuel = arena.duels.some((d) => d.aId === playerId || d.bId === playerId);
-        if (wasInDuel) {
-          console.log(`[handleLeave] round reset — room=${room.id} playerId=${playerId} was dueling`);
-          clearAllGameTimers(room.id);
-          resolvedDuels.delete(room.id);
-          for (const p of room.players) p.isReady = false;
-          arenas.set(room.id, { ...freshArena(), gameId: arena.gameId });
-          if (io) broadcastArena(room.id, io);
-          persistArena(room.id, arenas.get(room.id)!);
-          break;
-        }
-      }
       if (io) broadcastArena(room.id, io);
       persistRoom(room.id, room);
     }
     break;
   }
+}
+
+// ── Disconnect / eviction helpers ────────────────────────────────────────────
+
+/** Mark a player as disconnected (grace window). Broadcasts updated room to all. */
+export function markPlayerDisconnected(playerId: string, roomCode: string, io?: Server): void {
+  const room = rooms.get(roomCode);
+  if (!room) return;
+  const player = room.players.find((p) => p.id === playerId);
+  if (!player) return;
+  const now = Date.now();
+  player.connectionStatus = "disconnected";
+  player.disconnectedAt = now;
+  player.reconnectDeadlineAt = now + 60_000;
+  console.log(`[disconnect:grace] playerId=${playerId} room=${roomCode} deadline=${player.reconnectDeadlineAt}`);
+  if (io) broadcastArena(roomCode, io);
+  persistRoom(roomCode, room);
+}
+
+/** Move a player from active list to room.disconnectedPlayers after grace window expires. */
+export function evictDisconnectedPlayer(playerId: string, roomCode: string, io?: Server): void {
+  const room = rooms.get(roomCode);
+  if (!room) return;
+  const idx = room.players.findIndex((p) => p.id === playerId);
+  if (idx === -1) return; // already rejoined or already evicted
+
+  const player = room.players[idx];
+  // Only evict if still marked disconnected (guard against late-firing timer after rejoin)
+  if (player.connectionStatus !== "disconnected") return;
+
+  room.players.splice(idx, 1);
+  const entry: DisconnectedPlayer = {
+    id: player.id,
+    name: player.name,
+    score: player.score,
+    disconnectedAt: player.disconnectedAt ?? Date.now(),
+  };
+  room.disconnectedPlayers.push(entry);
+  console.log(`[evict] playerId=${playerId} room=${roomCode} moved to disconnectedPlayers`);
+
+  if (room.players.length === 0) {
+    rooms.delete(room.id);
+    arenas.delete(room.id);
+    benchCounts.delete(room.id);
+    lastBenched.delete(room.id);
+    gameDecks.delete(room.id);
+    lastGameDefIds.delete(room.id);
+    deckCycles.delete(room.id);
+    clearAllGameTimers(room.id);
+    resolvedDuels.delete(room.id);
+    return;
+  }
+
+  if (room.hostId === playerId) room.hostId = room.players[0].id;
+  if (io) broadcastArena(room.id, io);
+  persistRoom(room.id, room);
 }
 
 // ── Player ID assignment ──────────────────────────────────────────────────────

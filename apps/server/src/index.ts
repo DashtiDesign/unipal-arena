@@ -34,6 +34,7 @@ import {
   scheduleRound, startRound, handleLeave, registerSocket, deregisterSocket,
   personalDuel, createPlayerId, evictFromPreviousRoom,
   defaultRoomSettings, validateRoomSettings,
+  markPlayerDisconnected, evictDisconnectedPlayer,
 } from "./roomManager";
 import {
   startDuelGame, resolveDuel, clearAllGameTimers, broadcastGameStateForDuel,
@@ -106,11 +107,39 @@ const EARLY_RESOLVE_GAMES = new Set<string>([]);
 function handleRejoin(socket: Socket, playerId: string, roomCode: string): void {
   const room  = rooms.get(roomCode)!;
   const arena = arenas.get(roomCode)!;
-  const player = room.players.find((p) => p.id === playerId);
+
+  let player = room.players.find((p) => p.id === playerId);
+
+  // Check if player is in the disconnectedPlayers (evicted after 60s grace) and restore
+  if (!player) {
+    const evictedIdx = room.disconnectedPlayers.findIndex((p) => p.id === playerId);
+    if (evictedIdx !== -1) {
+      const evicted = room.disconnectedPlayers[evictedIdx];
+      room.disconnectedPlayers.splice(evictedIdx, 1);
+      const restored: Player = {
+        id: evicted.id,
+        name: evicted.name,
+        isReady: false,
+        score: evicted.score,
+        clockOffsetMs: 0,
+        connectionStatus: "connected",
+      };
+      room.players.push(restored);
+      player = restored;
+      console.log(`[rejoin] restored evicted player=${playerId} room=${roomCode} score=${evicted.score}`);
+      persistRoom(roomCode, room);
+    }
+  }
+
   if (!player) {
     socket.emit(EVENTS.ROOM_ERROR, { messageKey: "err_not_found", messageText: "Player not found." });
     return;
   }
+
+  // Mark player as connected again (clears grace-window fields)
+  player.connectionStatus = "connected";
+  delete player.disconnectedAt;
+  delete player.reconnectDeadlineAt;
 
   // Re-associate new socket with existing stable player identity
   const oldSocket = playerSockets.get(playerId);
@@ -124,6 +153,9 @@ function handleRejoin(socket: Socket, playerId: string, roomCode: string): void 
 
   const playerDuel = personalDuel(arena, playerId);
   socket.emit(EVENTS.PLAYER_REJOIN_ACK, { playerId, room, arena: { ...arena, duel: playerDuel } });
+
+  // Broadcast updated room to all (connection status changed)
+  broadcastArena(roomCode, io);
 
   // If mid-game, send current game state so client resumes without GAME_SYNC polling
   if (arena.phase === "DUELING" && playerDuel) {
@@ -141,7 +173,7 @@ function handleRejoin(socket: Socket, playerId: string, roomCode: string): void 
       });
     }
   }
-  console.log(`[rejoin] playerId=${playerId} socket=${socket.id} room=${roomCode}`);
+  console.log(`[rejoin] playerId=${playerId} socket=${socket.id} room=${roomCode} status=connected`);
 }
 
 // ── Socket.IO event handlers ──────────────────────────────────────────────────
@@ -166,8 +198,8 @@ io.on("connection", (socket) => {
 
     const roomCode = generateRoomCode();
     const playerId = createPlayerId();
-    const player: Player = { id: playerId, name, isReady: false, score: 0, clockOffsetMs: 0 };
-    const room: Room = { id: roomCode, hostId: playerId, players: [player], createdAt: Date.now(), settings: defaultRoomSettings() };
+    const player: Player = { id: playerId, name, isReady: false, score: 0, clockOffsetMs: 0, connectionStatus: "connected" };
+    const room: Room = { id: roomCode, hostId: playerId, players: [player], createdAt: Date.now(), settings: defaultRoomSettings(), disconnectedPlayers: [] };
 
     rooms.set(roomCode, room);
     arenas.set(roomCode, freshArena());
@@ -224,7 +256,7 @@ io.on("connection", (socket) => {
     evictFromPreviousRoom(socket.id, io);
 
     const playerId = createPlayerId();
-    const player: Player = { id: playerId, name, isReady: false, score: 0, clockOffsetMs: 0 };
+    const player: Player = { id: playerId, name, isReady: false, score: 0, clockOffsetMs: 0, connectionStatus: "connected" };
     room.players.push(player);
     socket.join(roomCode);
     registerSocket(socket.id, playerId, roomCode);
@@ -260,7 +292,9 @@ io.on("connection", (socket) => {
 
     if (arena.phase === "LOBBY") {
       player.isReady = !player.isReady;
-      const allReady = room.players.length >= 2 && room.players.every((p) => p.isReady);
+      // Only connected players must be ready; disconnected ones are excluded from the check
+      const connected = room.players.filter((p) => p.connectionStatus !== "disconnected");
+      const allReady = connected.length >= 2 && connected.every((p) => p.isReady);
       if (allReady) {
         benchCounts.delete(room.id);
         lastBenched.delete(room.id);
@@ -276,7 +310,11 @@ io.on("connection", (socket) => {
       if (!inDuel) return;
       player.isReady = true;
       const duelerIds = arena.duels.flatMap((d) => [d.aId, d.bId]);
-      const allDuelersReady = duelerIds.every((id) => room.players.find((p) => p.id === id)?.isReady ?? false);
+      // Disconnected players are treated as ready (they'll miss the countdown but duel still runs)
+      const allDuelersReady = duelerIds.every((id) => {
+        const p = room.players.find((pl) => pl.id === id);
+        return p ? (p.isReady || p.connectionStatus === "disconnected") : false;
+      });
       if (allDuelersReady) { startRound(room.id, io); return; }
       emitRoundUpdate(room.id, io);
     }
@@ -508,10 +546,13 @@ io.on("connection", (socket) => {
 
     if (!playerId) return;
 
-    // 60s grace window before eviction — allows mid-game reconnect to resume session
+    // Immediately mark the player as disconnected (visible in lobby/game UI)
+    if (roomCode) markPlayerDisconnected(playerId, roomCode, io);
+
+    // After 60s with no rejoin, evict the player from the active list
     const t = setTimeout(() => {
       abandonTimers.delete(playerId);
-      handleLeave(playerId, roomCode, "disconnect", io);
+      if (roomCode) evictDisconnectedPlayer(playerId, roomCode, io);
     }, 60_000);
     abandonTimers.set(playerId, t);
   });
