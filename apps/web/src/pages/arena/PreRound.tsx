@@ -2,22 +2,27 @@ import { useEffect, useState } from "react";
 import { T, Lang } from "../../i18n";
 import type { Room, ArenaState } from "@arena/shared";
 import { Button, Card, Chip } from "@heroui/react";
+import type { Theme } from "../../App";
+import SettingsDropdown from "../../components/SettingsDropdown";
 
 interface Props {
   t: T;
   lang: Lang;
+  theme: Theme;
   room: Room;
   arena: ArenaState;
   playerId: string;
   isReady: boolean;
   onToggleReady: () => void;
   onLeave: () => void;
+  onThemeToggle: () => void;
+  onLangChange: (l: Lang) => void;
 }
 
 const COUNTDOWN_MS = 3000;
 
 export default function PreRound({
-  t, lang, room, arena, playerId, isReady, onToggleReady,
+  t, lang, theme, room, arena, playerId, isReady, onToggleReady, onThemeToggle, onLangChange,
 }: Props) {
   const meta = arena.gameMeta;
   const isBenched = arena.benchedId === playerId;
@@ -68,6 +73,11 @@ export default function PreRound({
 
   return (
     <main className="flex flex-col items-center px-4 py-6 gap-4 max-w-sm mx-auto">
+
+      {/* Settings button — visible on ready screen, hidden during countdown */}
+      <div className="flex justify-end w-full">
+        <SettingsDropdown t={t} lang={lang} theme={theme} onThemeToggle={onThemeToggle} onLangChange={onLangChange} />
+      </div>
 
       {/* My status card */}
       <Card className="w-full">

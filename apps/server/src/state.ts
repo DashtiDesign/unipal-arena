@@ -13,6 +13,8 @@ export const lastBenched  = new Map<string, string>();
 export const gameDecks    = new Map<string, string[]>();
 // Last game def id played per room (to avoid consecutive repeats)
 export const lastGameDefIds = new Map<string, string>();
+// How many times the deck has been reshuffled per room (used as part of seeded shuffle seed)
+export const deckCycles   = new Map<string, number>();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const gameStates   = new Map<string, any>();              // keyed by matchId
 export const gameTimers   = new Map<string, ReturnType<typeof setTimeout>>(); // keyed by matchId or `round:${roomCode}`

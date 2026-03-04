@@ -63,12 +63,13 @@ export default function ReactionGreen({ publicState, playerId, opponentId, onInp
   }
 
   let statusMsg = "";
-  if (IWasEarly) statusMsg = "You tapped too early — you lose!";
+  if (IWasEarly) statusMsg = "You tapped too fast — wait for green!";
   else if (isGreen && !IReacted) statusMsg = "GO! TAP IT!";
   else if (!isGreen) statusMsg = "Stay still… wait for green";
 
+  // Opponent status — shown below button; does NOT lock our button
   let oppStatus = "";
-  if (oppEarly)        oppStatus = "Opponent tapped early!";
+  if (oppEarly)        oppStatus = "Opponent tapped early — you can still win!";
   else if (oppReacted) oppStatus = "Opponent tapped!";
 
   return (

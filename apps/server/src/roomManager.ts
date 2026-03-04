@@ -11,7 +11,7 @@ import type {
 } from "@arena/shared";
 import { EVENTS, WIN_SCORE_OPTIONS, MIN_ENABLED_GAMES, EXPERIMENTAL_GAME_IDS } from "@arena/shared";
 import {
-  rooms, arenas, benchCounts, lastBenched, gameDecks, lastGameDefIds,
+  rooms, arenas, benchCounts, lastBenched, gameDecks, lastGameDefIds, deckCycles,
   resolvedDuels, socketRooms, socketPlayers, playerSockets,
   socketOf,
 } from "./state";
@@ -165,16 +165,28 @@ export function scheduleRound(roomCode: string, io: Server): void {
   // Same game for all duels in this round — never repeat the last game played
   // Use room's enabledGameIds to build/filter the deck; fall back to main games only
   const enabledIds = room.settings?.enabledGameIds ?? MAIN_GAME_IDS;
-  if (!gameDecks.has(roomCode)) gameDecks.set(roomCode, freshDeck(enabledIds));
+
+  // Seeded shuffle: seed = roomCode + deckCycleIndex for deterministic multi-instance consistency
+  const deckCycle = deckCycles.get(roomCode) ?? 0;
+  const deckSeed = `${roomCode}:${deckCycle}`;
+
+  if (!gameDecks.has(roomCode)) {
+    gameDecks.set(roomCode, freshDeck(enabledIds, deckSeed));
+    deckCycles.set(roomCode, deckCycle + 1);
+  }
   // If deck is now empty or contains only disabled games, reshuffle with current enabledIds
   const deck = gameDecks.get(roomCode)!;
   const validDeck = deck.filter((id) => enabledIds.includes(id));
   if (validDeck.length === 0) {
-    gameDecks.set(roomCode, freshDeck(enabledIds));
+    const nextCycle = deckCycles.get(roomCode) ?? 0;
+    gameDecks.set(roomCode, freshDeck(enabledIds, `${roomCode}:${nextCycle}`));
+    deckCycles.set(roomCode, nextCycle + 1);
   } else if (validDeck.length !== deck.length) {
     gameDecks.set(roomCode, validDeck);
   }
-  const gameDef = nextFromDeck(gameDecks.get(roomCode)!, lastGameDefIds.get(roomCode), enabledIds);
+  // Pass the next cycle seed so nextFromDeck can use it if deck runs out mid-call
+  const currentCycle = deckCycles.get(roomCode) ?? 0;
+  const gameDef = nextFromDeck(gameDecks.get(roomCode)!, lastGameDefIds.get(roomCode), enabledIds, `${roomCode}:${currentCycle}`);
   lastGameDefIds.set(roomCode, gameDef.id);
   const gameMeta = {
     gameDefId: gameDef.id,
@@ -275,6 +287,7 @@ export function handleLeave(
       lastBenched.delete(room.id);
       gameDecks.delete(room.id);
       lastGameDefIds.delete(room.id);
+      deckCycles.delete(room.id);
       clearAllGameTimers(room.id);
       resolvedDuels.delete(room.id);
     } else {

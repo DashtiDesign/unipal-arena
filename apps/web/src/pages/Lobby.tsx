@@ -326,12 +326,15 @@ export default function Lobby({ t, lang, theme, session, onSessionUpdate, onLeav
         <PreRound
           t={t}
           lang={lang}
+          theme={theme}
           room={room}
           arena={arena}
           playerId={playerId}
           isReady={isReady}
           onToggleReady={handleToggleReady}
           onLeave={handleLeave}
+          onThemeToggle={onThemeToggle}
+          onLangChange={onLangChange}
         />
       </>
     );

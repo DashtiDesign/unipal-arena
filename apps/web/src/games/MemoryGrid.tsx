@@ -84,7 +84,7 @@ export default function MemoryGrid({
     if (revealing) {
       return s.targets?.includes(i) ? "bg-(--warning) scale-105 shadow-lg" : "bg-(--surface-secondary)";
     }
-    if (tapped.includes(i)) return "bg-(--accent) text-(--accent-foreground)";
+    if (tapped.includes(i)) return "bg-(--warning) scale-105 shadow-lg";
     if (iDone) return "bg-(--surface-secondary) opacity-40 cursor-not-allowed";
     return "bg-(--surface-secondary) hover:bg-(--surface-tertiary) active:scale-90";
   }
@@ -121,7 +121,7 @@ export default function MemoryGrid({
             style={{ touchAction: "none" }}
             onPointerDown={(e) => { e.preventDefault(); handleTap(i); }}
           >
-            {revealing && s.targets?.includes(i) ? "⭐" : ""}
+            {""}
           </button>
         ))}
       </div>

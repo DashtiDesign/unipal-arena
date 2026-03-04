@@ -32,8 +32,8 @@ const reactionGreen: GameDefinition<State, Public> = {
   displayName: { en: "Reaction Time", ar: "وقت ردّة الفعل" },
   durationMs: ROUND_DURATION_MS,
   instructions: {
-    en: "Tap when it turns GREEN. Tapping too early = instant loss!",
-    ar: "انقر عندما يتحول للأخضر. النقر المبكر = خسارة فورية!",
+    en: "Tap when it turns GREEN. Tapping too early = you lose your chance!",
+    ar: "انقر عندما يتحول للأخضر. النقر المبكر = تخسر فرصتك!",
   },
   init(playerIds) {
     const now = Date.now();
@@ -90,8 +90,10 @@ const reactionGreen: GameDefinition<State, Public> = {
     return { ...s, reactions: { ...s.reactions, [playerId]: tapAt }, displayMs: newDisplayMs };
   },
   isResolved(s) {
-    if (Object.keys(s.earlyTap).length > 0) return true;
-    return s.playerIds.every((id) => id in s.reactions);
+    // A player is "done" if they have tapped early OR have a valid reaction recorded.
+    // Only resolve early when ALL players are done — this lets the non-early player
+    // continue playing after their opponent false-starts.
+    return s.playerIds.every((id) => id in s.earlyTap || id in s.reactions);
   },
   resolve(s) {
     const [a, b] = s.playerIds;
